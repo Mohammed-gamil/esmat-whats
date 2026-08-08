@@ -1,0 +1,166 @@
+// WhatsApp AI Sales Agent — Standalone Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Connected WhatsApp accounts/sessions on OpenWA Gateway
+model WhatsAppSession {
+  id           String    @id @default(cuid())
+  sessionId    String    @unique /// OpenWA session ID (e.g. "sales-agent-1")
+  engine       String    @default("whatsapp-web.js") /// "whatsapp-web.js" | "baileys"
+  phoneNumber  String?   /// Connected phone number once authenticated
+  status       String    @default("STARTING") /// "STARTING" | "SCAN_QR_CODE" | "WORKING" | "STOPPED"
+  qrCodeUrl    String?   /// Base64 QR image string for scanning
+  apiKey       String?   /// Session API Key for authentication
+  outreaches   WhatsAppOutreach[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Links a Contact/Lead to a WhatsApp AI Sales Conversation
+model WhatsAppOutreach {
+  id           String    @id @default(cuid())
+  leadId       String    /// ID of the target contact/lead
+  leadType     String    /// "lead" | "maps_lead" | "icp_prospect" | "csv_lead" | "inbound"
+  contactPhone String    /// Target JID (e.g. "20123456789@c.us")
+  recipientName String?  /// Contact person or company name
+  
+  /// Outreach Pipeline Status: "queued" | "sent" | "delivered" | "replied" | "qualified" | "closed" | "failed"
+  status       String    @default("queued")
+  initialHook  String?   /// Initial AI sales hook message
+  sentiment    String?   /// "positive" | "neutral" | "negative" | "objection"
+  leadScore    Int       @default(0)  /// 0-100 interest score; >= 60 = auto-qualified
+  isHumanHandled Boolean @default(false) /// true = human rep took over, AI pauses auto-reply
+  
+  sessionId    String
+  session      WhatsAppSession @relation(fields: [sessionId], references: [id])
+  messages     WhatsAppMessage[]
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([leadId, leadType])
+  @@index([status])
+  @@index([contactPhone])
+}
+
+/// Inbound and Outbound WhatsApp Messages
+model WhatsAppMessage {
+  id           String    @id @default(cuid())
+  outreachId   String
+  outreach     WhatsAppOutreach @relation(fields: [outreachId], references: [id], onDelete: Cascade)
+  
+  direction    String    /// "inbound" | "outbound"
+  senderJid    String    /// JID of sender
+  body         String    /// Message content
+  msgType      String    @default("text") /// "text" | "reaction" | "choice" | "media"
+  waMessageId  String?   /// WhatsApp message ID — used for webhook dedup
+  
+  createdAt    DateTime  @default(now())
+
+  @@index([outreachId])
+  @@index([createdAt])
+  @@index([waMessageId])
+}
+
+/// WhatsApp AI Sales Agent Global Settings
+model WhatsAppSetting {
+  id             String   @id @default("default")
+  gatewayUrl     String   @default("http://localhost:2785")
+  apiKey         String   @default("")
+  systemPrompt   String   @default("You are an expert B2B AI Sales Representative. Your goal is to engage leads warmly, discover their operational pain points, answer technical/pricing inquiries using exact facts, handle objections smoothly, and schedule a 30-min discovery call or close the sale.")
+  delaySeconds   Int      @default(5) /// Random delay between outreach messages (anti-spam)
+  autoReply      Boolean  @default(true)
+  slangEnabled   Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+}
+
+/// Dynamic system settings (LLM provider, keys, prompt customization, Zoho CRM)
+model SystemSetting {
+  id        String   @id @default("default")
+  /// LLM provider: "openai" | "gemini" | "anthropic" | "openrouter" | "ollama" | "custom"
+  llmProvider String @default("openai")
+  /// API key for LLM provider
+  llmApiKey   String @default("")
+  /// Model name (e.g. "gpt-4o-mini", "gemini-2.5-flash", "claude-3-5-sonnet")
+  llmModel    String @default("gpt-4o-mini")
+  /// Custom base URL for OpenAI-compatible endpoint
+  llmBaseUrl  String @default("")
+  /// Custom prompt instructions for extraction/AI logic
+  llmCustomPrompt String @default("")
+  /// Freshness filter
+  freshnessFilter String @default("7d")
+
+  // --- Zoho CRM Integration Settings ---
+  zohoEnabled      Boolean  @default(false)
+  zohoClientId     String   @default("")
+  zohoClientSecret String   @default("")
+  zohoRefreshToken String   @default("")
+  zohoAccessToken  String   @default("")
+  zohoDomain       String   @default("com")
+  zohoModule       String   @default("Leads")
+  zohoWebhookUrl   String   @default("")
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Standalone Leads Model
+model Lead {
+  id            String   @id @default(cuid())
+  source        String   @default("manual")
+  role          String   @default("Decision Maker")
+  jobTitle      String?
+  companyName   String?
+  location      String?
+  contactEmail  String?
+  contactPhone  String?
+  summary       String?
+  status        String   @default("new")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Commercial Places Leads Model
+model MapsLead {
+  id           String    @id @default(cuid())
+  niche        String
+  city         String
+  businessName String
+  phone        String?
+  website      String?
+  address      String?
+  rating       Float?
+  reviewCount  Int?
+  intelSheet   String?
+  dorkUrls     String?
+  companyLinkedin   String?
+  employeeLinkedins String?
+  status       String    @default("new")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// B2B Strategic ICP Prospects Model
+model IcpProspect {
+  id               String    @id @default(cuid())
+  companyName      String
+  sector           String?
+  region           String?
+  employeeCount    String?
+  companyLinkedin  String?
+  targetTitle      String?
+  signals          String?
+  outreachAngle    String?
+  contacts         String?
+  dorkUrls         String?
+  enrichment       String?
+  status           String    @default("new")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
