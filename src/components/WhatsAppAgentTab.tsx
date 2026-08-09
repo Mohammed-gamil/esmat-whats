@@ -190,8 +190,11 @@ export function WhatsAppAgentTab() {
     return () => clearInterval(interval);
   }, []);
 
+  // Prevent window page auto-scrolling on state changes
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatEndRef.current && chatEndRef.current.parentElement) {
+      chatEndRef.current.parentElement.scrollTop = chatEndRef.current.parentElement.scrollHeight;
+    }
   }, [selectedOutreach?.messages?.length]);
 
   const activeSession = sessions[0] || null;

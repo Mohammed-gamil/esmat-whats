@@ -51,22 +51,26 @@ export function AutomationMonitorSection({
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const logTerminalEndRef = useRef<HTMLDivElement>(null);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
 
   const recipientColumn = parseResult?.recipientColumn || 'phone';
   const rows = parseResult?.rows || [];
 
+  // Initialize queue state only when CSV rows or recipient column changes, avoiding re-initialization on typing
   useEffect(() => {
-    if (executionState.status === 'idle' && rows.length > 0 && variations.length > 0) {
+    if (executionState.status === 'idle' && rows.length > 0) {
       const queue = buildRecipientQueue(rows, recipientColumn, variations);
       const initialState = createInitialExecutionState(queue);
       setExecutionState(initialState);
     }
-  }, [rows, recipientColumn, variations, executionState.status]);
+  }, [rows, recipientColumn]);
 
+  // Scroll ONLY the internal log terminal box when running (never scroll the entire window/page)
   useEffect(() => {
-    logTerminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [executionState.logs]);
+    if (executionState.status === 'running' && terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+    }
+  }, [executionState.logs, executionState.status]);
 
   const handleStartAutomation = () => {
     if (rows.length === 0) {
@@ -564,7 +568,7 @@ export function AutomationMonitorSection({
             </span>
           </div>
 
-          <div className="bg-[#060f13] p-3 rounded-lg border border-white/5 h-[300px] overflow-y-auto space-y-1.5 text-[11px] leading-relaxed scrollbar-thin">
+          <div ref={terminalContainerRef} className="bg-[#060f13] p-3 rounded-lg border border-white/5 h-[300px] overflow-y-auto space-y-1.5 text-[11px] leading-relaxed scrollbar-thin">
             {executionState.logs.length === 0 ? (
               <div className="text-white/40 italic">Waiting for automation execution events...</div>
             ) : (
@@ -594,7 +598,6 @@ export function AutomationMonitorSection({
                 );
               })
             )}
-            <div ref={logTerminalEndRef} />
           </div>
         </div>
       </div>
