@@ -1,0 +1,59 @@
+name: whatsapp-sales-platform
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whatsapp_sales_app
+    restart: always
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: "file:./dev.db"
+      OPENWA_URL: "http://gateway:2785"
+      OPENWA_API_KEY: "${OPENWA_API_KEY}"
+      WHATSAPP_WEBHOOK_URL: "${WHATSAPP_WEBHOOK_URL:-http://localhost:3000/api/whatsapp/webhook}"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    volumes:
+      - ./dev.db:/app/dev.db
+      - ./prisma:/app/prisma
+    depends_on:
+      - gateway
+      - redis
+
+  gateway:
+    build:
+      context: ./openwa
+      dockerfile: Dockerfile
+    container_name: openwa_whatsapp_gateway
+    restart: always
+    ports:
+      - "2785:2785"
+    environment:
+      PORT: 2785
+      WEBHOOK_SSRF_PROTECT: "false"
+      SSRF_ALLOWED_HOSTS: "app,localhost,127.0.0.1"
+      AUTO_START_SESSIONS: "true"
+    volumes:
+      - ./openwa/data:/app/data
+      - ./openwa/.wwebjs_auth:/app/.wwebjs_auth
+      - ./openwa/.wwebjs_cache:/app/.wwebjs_cache
+
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp_sales_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
