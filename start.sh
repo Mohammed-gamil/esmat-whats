@@ -29,16 +29,35 @@ if [ ! -f ".env" ]; then
     cp .env.example .env
 fi
 
-# 2. Sync Seeded API Key into .env automatically
+# 2. Define and Sync Master API Key across OpenWA Gateway and Application
+MASTER_KEY="${OPENWA_API_KEY:-esmat_whatsapp_master_key_2026}"
 if [ -f "openwa/data/.api-key" ]; then
-    KEY=$(cat openwa/data/.api-key | tr -d '\r\n ')
-    if [ -n "$KEY" ]; then
-        if grep -q 'OPENWA_API_KEY=""' .env 2>/dev/null; then
-            sed -i "s|OPENWA_API_KEY=\"\"|OPENWA_API_KEY=\"$KEY\"|g" .env
-            success "Synced WhatsApp Gateway API Key automatically to .env"
-        fi
+    FILE_KEY=$(cat openwa/data/.api-key 2>/dev/null | tr -d '\r\n ' || true)
+    if [ -n "$FILE_KEY" ]; then
+        MASTER_KEY="$FILE_KEY"
     fi
 fi
+
+# Ensure master key is written to openwa/data/.api-key
+mkdir -p openwa/data
+echo -n "$MASTER_KEY" > openwa/data/.api-key
+chmod 600 openwa/data/.api-key 2>/dev/null || true
+
+# Always keep .env synchronized with the active master API key
+if grep -q '^OPENWA_API_KEY=' .env 2>/dev/null; then
+    sed -i "s|^OPENWA_API_KEY=.*|OPENWA_API_KEY=\"$MASTER_KEY\"|g" .env
+else
+    echo "OPENWA_API_KEY=\"$MASTER_KEY\"" >> .env
+fi
+
+if grep -q '^API_MASTER_KEY=' .env 2>/dev/null; then
+    sed -i "s|^API_MASTER_KEY=.*|API_MASTER_KEY=\"$MASTER_KEY\"|g" .env
+else
+    echo "API_MASTER_KEY=\"$MASTER_KEY\"" >> .env
+fi
+export OPENWA_API_KEY="$MASTER_KEY"
+export API_MASTER_KEY="$MASTER_KEY"
+success "Synchronized Master API Key across OpenWA Gateway & Application"
 
 # 3. Redis Check & Fallback
 if command -v redis-cli &> /dev/null && redis-cli -p 6379 ping 2>/dev/null | grep -q PONG; then
@@ -74,7 +93,7 @@ if [ -d "openwa" ]; then
         success "OpenWA Gateway active on http://localhost:2785"
     else
         info "Launching OpenWA NestJS Gateway on port 2785..."
-        (cd openwa && nohup env WEBHOOK_SSRF_PROTECT=false SSRF_ALLOWED_HOSTS=localhost,127.0.0.1 node dist/main > "$(pwd)/openwa.log" 2>&1 & disown)
+        (cd openwa && nohup env API_MASTER_KEY="$MASTER_KEY" OPENWA_API_KEY="$MASTER_KEY" WEBHOOK_SSRF_PROTECT=false SSRF_ALLOWED_HOSTS=localhost,127.0.0.1 node dist/main > "$(pwd)/openwa.log" 2>&1 & disown)
         
         # Poll for gateway readiness up to 10 seconds
         for i in {1..20}; do

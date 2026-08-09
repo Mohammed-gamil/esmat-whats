@@ -14,7 +14,8 @@ services:
       PORT: 3000
       DATABASE_URL: "file:./dev.db"
       OPENWA_URL: "http://gateway:2785"
-      OPENWA_API_KEY: "${OPENWA_API_KEY}"
+      OPENWA_API_KEY: "${OPENWA_API_KEY:-esmat_whatsapp_master_key_2026}"
+      API_MASTER_KEY: "${API_MASTER_KEY:-esmat_whatsapp_master_key_2026}"
       WHATSAPP_WEBHOOK_URL: "${WHATSAPP_WEBHOOK_URL:-http://localhost:3000/api/whatsapp/webhook}"
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -38,6 +39,8 @@ services:
       - "2785:2785"
     environment:
       PORT: 2785
+      API_MASTER_KEY: "${API_MASTER_KEY:-esmat_whatsapp_master_key_2026}"
+      OPENWA_API_KEY: "${OPENWA_API_KEY:-esmat_whatsapp_master_key_2026}"
       WEBHOOK_SSRF_PROTECT: "false"
       SSRF_ALLOWED_HOSTS: "app,localhost,127.0.0.1"
       AUTO_START_SESSIONS: "true"

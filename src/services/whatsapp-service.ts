@@ -42,11 +42,15 @@ export class WhatsAppService {
       return process.env.OPENWA_API_KEY.trim();
     }
 
+    if (process.env.API_MASTER_KEY && process.env.API_MASTER_KEY.trim()) {
+      return process.env.API_MASTER_KEY.trim();
+    }
+
     if (settingsApiKey && settingsApiKey.trim()) {
       return settingsApiKey.trim();
     }
 
-    return "owa_k1_f1043fb6e66f6fa0f1334e2592b91108be8e96d5312f7ad32ad6d705ff2150b9";
+    return "esmat_whatsapp_master_key_2026";
   }
 
   static getHeaders(apiKey?: string) {

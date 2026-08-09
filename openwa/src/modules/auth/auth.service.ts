@@ -75,6 +75,21 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // Guarantee that API_MASTER_KEY or OPENWA_API_KEY provided in env is always seeded into DB
+    const masterEnvKey = process.env.API_MASTER_KEY || process.env.OPENWA_API_KEY;
+    if (masterEnvKey && masterEnvKey.trim()) {
+      const masterKey = masterEnvKey.trim();
+      const existingKey = await this.apiKeyRepository.findOne({
+        where: { keyHash: this.hashKey(masterKey) },
+      });
+      if (!existingKey) {
+        await this.seedApiKey(masterKey, 'Master System Admin Key', ApiKeyRole.ADMIN);
+        try {
+          writeBootstrapKey(masterKey);
+        } catch (err) {}
+      }
+    }
+
     // Seed a default API key if none exist
     const count = await this.apiKeyRepository.count();
     let displayKey: string;
