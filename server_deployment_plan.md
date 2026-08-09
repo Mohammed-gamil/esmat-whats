@@ -127,12 +127,13 @@ sudo ufw status
 
 ---
 
-### Step 5: Launch Containers with Docker Compose
+### Step 5: Execute Safe Crash-Proof Deployment Script
 
-Build and launch all 4 production microservices (**App**, **OpenWA Gateway**, **PostgreSQL**, **Redis**):
+Run the automated deployment script `deploy.sh` (automatically allocates 4GB swap space, cleans stale Docker build cache, and builds containers sequentially to prevent server OOM crashes):
 
 ```bash
-sudo docker compose up -d --build
+chmod +x deploy.sh
+./deploy.sh
 ```
 
 Verify service statuses and healthchecks:
