@@ -1,11 +1,11 @@
-// WhatsApp AI Sales Agent — Standalone Prisma Schema
+// WhatsApp AI Sales Agent — PostgreSQL Production Schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
