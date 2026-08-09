@@ -30,7 +30,16 @@ echo -e "${DIM}🛡️ OpenWA Gateway operates via companion web protocols."
 echo -e "   Recommended: Link a dedicated/burner line (not personal main account)."
 echo -e "   Anti-ban pacing: Default inter-message delay & simulated typing active.${NC}\n"
 
-# 2. Environment file initialization
+# 2. Terminate pre-existing server processes & clear occupied ports
+info "Terminating pre-existing processes & clearing ports (2785, 3000, 3001, 3002, 6379)..."
+pkill -f "node dist/main" 2>/dev/null || true
+pkill -f "next-server" 2>/dev/null || true
+pkill -f "next dev" 2>/dev/null || true
+fuser -k 2785/tcp 3000/tcp 3001/tcp 3002/tcp 6379/tcp 2>/dev/null || true
+sleep 1
+success "Environment cleared for fresh launch"
+
+# 3. Environment file initialization
 if [ ! -f ".env" ]; then
     info "Initializing .env configuration from .env.example..."
     cp .env.example .env
