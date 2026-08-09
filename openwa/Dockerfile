@@ -109,12 +109,18 @@ RUN groupadd -r openwa && useradd -r -g openwa openwa
 
 WORKDIR /app
 
-# Copy package files and scripts
+# Copy package files and patch scripts
 COPY package*.json ./
 COPY scripts/ ./scripts/
 
-# Copy dependencies and pre-patched node_modules from builder stage (eliminates duplicate npm ci)
-COPY --from=builder /app/node_modules ./node_modules
+# Install lightweight production dependencies only
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm ci --omit=dev --no-audit --no-fund && \
+    (node scripts/patch-wwebjs-201832.js || true) && \
+    (node scripts/patch-wwebjs-newsletter-preview.js || true) && \
+    npm cache clean --force
 
 # Replace the npm the base image bundles. npm is not on the request path — the entrypoint runs
 # `node dist/main` — but it stays in the image because the operator runbooks drive it
