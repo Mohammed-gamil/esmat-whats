@@ -3,6 +3,7 @@ import {
   ExecutionLog,
   RecipientQueueItem,
 } from '@/types/automation';
+import { formatWhatsAppPhone } from './phone-formatter';
 
 /**
  * Enforces the strict rule that delay cannot be lower than 1 minute (60 seconds).
@@ -78,11 +79,12 @@ export function addExecutionLog(
 }
 
 /**
- * Executes real message dispatch via OpenWA Gateway server proxy.
+ * Executes real message dispatch via OpenWA Gateway server proxy with human typing simulation & auto +20 prefix.
  */
 export async function sendRecipientMessage(
   item: RecipientQueueItem,
-  onProgressLog?: (log: ExecutionLog) => void
+  simulateTyping: boolean = true,
+  defaultCountryCode: string = '20'
 ): Promise<{ success: boolean; error?: string }> {
   if (!item.recipientContact || item.recipientContact.trim() === '') {
     return {
@@ -91,7 +93,8 @@ export async function sendRecipientMessage(
     };
   }
 
-  const cleanPhone = item.recipientContact.replace(/[^\d]/g, '');
+  // Format phone with +20 Egypt / country code auto-prefix
+  const cleanPhone = formatWhatsAppPhone(item.recipientContact, defaultCountryCode);
   if (!cleanPhone || cleanPhone.length < 6) {
     return {
       success: false,
@@ -107,6 +110,8 @@ export async function sendRecipientMessage(
         action: 'send-text',
         chatId: `${cleanPhone}@c.us`,
         text: item.resolvedMessage,
+        simulateTyping: simulateTyping,
+        defaultCountryCode: defaultCountryCode,
       }),
     });
 

@@ -12,6 +12,7 @@ import {
 import { SavedTemplate, MessageVariation } from '@/types/automation';
 import {
   getSavedTemplates,
+  fetchServerTemplates,
   saveTemplate,
   deleteTemplate,
   findCompatibleTemplates,
@@ -36,8 +37,8 @@ export function SavedTemplatesSection({
   const [newTemplateDesc, setNewTemplateDesc] = useState('');
   const [justAppliedId, setJustAppliedId] = useState<string | null>(null);
 
-  const loadTemplates = () => {
-    const list = getSavedTemplates();
+  const loadTemplates = async () => {
+    const list = await fetchServerTemplates();
     setTemplates(list);
     const comps = findCompatibleTemplates(csvHeaders, list);
     setCompatibilities(comps);

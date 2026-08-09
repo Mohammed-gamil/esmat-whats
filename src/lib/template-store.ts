@@ -9,24 +9,24 @@ const STORAGE_KEY = 'csv_bulk_automation_saved_templates_v1';
 export const DEFAULT_SAVED_TEMPLATES: SavedTemplate[] = [
   {
     id: 'tpl_exam_results',
-    name: 'Academic Exam Results Broadcast',
-    description: 'Compatible with CSV files containing name, phone, course, result, grade.',
+    name: 'Academic Exam Results Broadcast (Arabic & English)',
+    description: 'Compatible with CSV files containing name, phone, course, result, grade or Arabic headers (الاسم, النتيجة, الكورس).',
     requiredVariables: ['name', 'result', 'course'],
     variations: [
       {
         id: 'var_1',
-        title: 'Variation 1 (Friendly & Direct)',
-        content: 'Hello {{name}}, your final exam result for {{course}} is now published: {{result}} (Grade: {{grade}}). Congratulations!',
+        title: 'Variation 1 (Arabic Friendly)',
+        content: 'مرحبا {{name}}، تم إعلان نتيجة اختبار {{course}}: {{result}} (التقدير: {{grade}}). مبروك والتوفيق دائماً!',
       },
       {
         id: 'var_2',
-        title: 'Variation 2 (Formal Announcement)',
+        title: 'Variation 2 (English Announcement)',
         content: 'Dear {{name}}, this is an official update regarding your {{course}} assessment. Status: {{result}} with Grade {{grade}}.',
       },
       {
         id: 'var_3',
-        title: 'Variation 3 (Encouraging Tone)',
-        content: 'Hi {{name}}! Great news regarding your {{course}} course. Your official result is {{result}}. Keep up the great work!',
+        title: 'Variation 3 (Direct Result Notice)',
+        content: 'أهلاً {{name}}! نود إعلامك بأن نتيجة مقرر {{course}} هي {{result}}. نتمنى لك المزيد من النجاح!',
       },
     ],
     createdAt: new Date('2026-08-01T10:00:00Z').toISOString(),
@@ -75,6 +75,25 @@ export const DEFAULT_SAVED_TEMPLATES: SavedTemplate[] = [
 ];
 
 /**
+ * Syncs saved templates with server API endpoint and localStorage for permanent preservation.
+ */
+export async function fetchServerTemplates(): Promise<SavedTemplate[]> {
+  try {
+    const res = await fetch('/api/whatsapp/templates');
+    const data = await res.json();
+    if (data.success && Array.isArray(data.templates) && data.templates.length > 0) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.templates));
+      }
+      return data.templates;
+    }
+  } catch (e) {
+    // Fallback to localStorage
+  }
+  return getSavedTemplates();
+}
+
+/**
  * Retrieves all saved templates from localStorage combined with default presets.
  */
 export function getSavedTemplates(): SavedTemplate[] {
@@ -89,15 +108,14 @@ export function getSavedTemplates(): SavedTemplate[] {
       return DEFAULT_SAVED_TEMPLATES;
     }
     const parsed: SavedTemplate[] = JSON.parse(raw);
-    return parsed;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_SAVED_TEMPLATES;
   } catch (err) {
-    console.error('Failed to parse saved templates from localStorage', err);
     return DEFAULT_SAVED_TEMPLATES;
   }
 }
 
 /**
- * Saves a new template or updates an existing template in localStorage.
+ * Saves a new template or updates an existing template permanently to server & localStorage.
  */
 export function saveTemplate(
   name: string,
@@ -107,7 +125,6 @@ export function saveTemplate(
 ): SavedTemplate {
   const templates = getSavedTemplates();
   const requiredVariables = extractVariablesFromVariations(variations);
-
   const now = new Date().toISOString();
 
   let targetTemplate: SavedTemplate;
@@ -151,13 +168,19 @@ export function saveTemplate(
 
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+    // Asynchronously backup to server database endpoint
+    fetch('/api/whatsapp/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', template: targetTemplate }),
+    }).catch(() => {});
   }
 
   return targetTemplate;
 }
 
 /**
- * Deletes a template by ID from localStorage.
+ * Deletes a template permanently from server & localStorage.
  */
 export function deleteTemplate(id: string): SavedTemplate[] {
   const templates = getSavedTemplates();
@@ -165,6 +188,11 @@ export function deleteTemplate(id: string): SavedTemplate[] {
 
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    fetch('/api/whatsapp/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', id }),
+    }).catch(() => {});
   }
 
   return filtered;
@@ -180,7 +208,7 @@ export interface TemplateCompatibility {
 
 /**
  * Finds all compatible saved templates based on matching CSV column names.
- * A template is 100% compatible if all requiredVariables are present in csvHeaders.
+ * Handles Arabic & English case-insensitive header matching.
  */
 export function findCompatibleTemplates(
   csvHeaders: string[],
@@ -196,7 +224,9 @@ export function findCompatibleTemplates(
     }));
   }
 
-  const csvHeaderSet = new Set(csvHeaders.map((h) => h.toLowerCase().trim()));
+  const csvHeaderSet = new Set(
+    csvHeaders.map((h) => h.toLowerCase().trim().replace(/[\s_\-\.]+/g, ''))
+  );
 
   return templates.map((tpl) => {
     if (tpl.requiredVariables.length === 0) {
@@ -213,7 +243,10 @@ export function findCompatibleTemplates(
     const missing: string[] = [];
 
     tpl.requiredVariables.forEach((reqVar) => {
-      if (csvHeaderSet.has(reqVar.toLowerCase().trim())) {
+      const normVar = reqVar.toLowerCase().trim().replace(/[\s_\-\.]+/g, '');
+      const isNumIndex = /^\d+$/.test(reqVar) && parseInt(reqVar, 10) <= csvHeaders.length;
+
+      if (csvHeaderSet.has(normVar) || isNumIndex) {
         matching.push(reqVar);
       } else {
         missing.push(reqVar);

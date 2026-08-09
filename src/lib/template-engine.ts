@@ -4,26 +4,38 @@ import {
   RecipientQueueItem,
   VariableValidationResult,
 } from '@/types/automation';
+import { formatWhatsAppPhone } from './phone-formatter';
 
 /**
- * Regular expression to match dynamic variable placeholders like {{variable_name}}
+ * Robust Regex matching dynamic variables in English, Arabic, numbers, dots, spaces, underscores:
+ * Matches: {{name}}, {name}, ${name}, {{اسم_العميل}}, {النتيجة}, {1}, {2}, etc.
  */
-const VARIABLE_REGEX = /\{\{\s*([a-zA-Z0-9_\-\.]+)\s*\}\}/g;
+const VARIABLE_REGEX = /(?:\$\{?|\{\{?)\s*([^{}\r\n]+?)\s*(?:\}\}?|\}?)/g;
 
 /**
- * Extracts all unique dynamic variable names from a text string.
- * Example: "Hello {{name}}, your result is {{result}}" -> ["name", "result"]
+ * Sanitizes variable key for matching (lowercasing, trimming spaces, normalizing Unicode).
+ */
+function normalizeKey(str: string): string {
+  if (!str) return '';
+  return str.trim().toLowerCase().normalize('NFC').replace(/[\s_\-\.]+/g, '');
+}
+
+/**
+ * Extracts all unique dynamic variable names from a text template string.
+ * Supports English & Arabic variable names (e.g. {{اسم_العميل}}, {1}, {{result}}).
  */
 export function extractVariables(text: string): string[] {
   if (!text) return [];
   const matches = new Set<string>();
   let match: RegExpExecArray | null;
 
-  // Reset regex state
-  const regex = new RegExp(VARIABLE_REGEX);
+  const regex = new RegExp(VARIABLE_REGEX.source, 'g');
   while ((match = regex.exec(text)) !== null) {
     if (match[1]) {
-      matches.add(match[1].trim());
+      const cleanVar = match[1].trim();
+      if (cleanVar && !cleanVar.startsWith('#')) {
+        matches.add(cleanVar);
+      }
     }
   }
 
@@ -50,14 +62,17 @@ export function validateVariablesAgainstHeaders(
   csvHeaders: string[]
 ): VariableValidationResult {
   const usedVariables = extractVariablesFromVariations(variations);
-  const headerSet = new Set(csvHeaders.map((h) => h.toLowerCase().trim()));
+  const normalizedHeaderSet = new Set(csvHeaders.map((h) => normalizeKey(h)));
 
   const validVariables: string[] = [];
   const missingVariables: string[] = [];
 
   usedVariables.forEach((variable) => {
-    const lowerVar = variable.toLowerCase().trim();
-    if (headerSet.has(lowerVar)) {
+    const normVar = normalizeKey(variable);
+    // Allow numerical index variables like {1}, {2} if csvHeaders exist
+    const isNumIndex = /^\d+$/.test(variable) && parseInt(variable, 10) <= csvHeaders.length;
+
+    if (normalizedHeaderSet.has(normVar) || isNumIndex) {
       validVariables.push(variable);
     } else {
       missingVariables.push(variable);
@@ -74,38 +89,54 @@ export function validateVariablesAgainstHeaders(
 
 /**
  * Interpolates variables in a message text template using values from a CSV row.
- * Replaces {{var_name}} case-insensitively with row values.
+ * Handles English, Arabic, dynamic headers, index-based variables ({1}, {2}), and missing fallbacks.
  */
 export function renderMessageTemplate(template: string, row: CsvRow): string {
   if (!template) return '';
 
-  return template.replace(VARIABLE_REGEX, (fullMatch, varName) => {
-    const trimmedVar = varName.trim();
+  const rowKeys = Object.keys(row).filter((k) => !k.startsWith('__'));
 
-    // Direct match
-    if (row[trimmedVar] !== undefined && row[trimmedVar] !== null) {
-      return row[trimmedVar];
+  return template.replace(new RegExp(VARIABLE_REGEX.source, 'g'), (fullMatch, rawVarName) => {
+    const varName = String(rawVarName || '').trim();
+    if (!varName) return fullMatch;
+
+    // 1. Direct exact key match
+    if (row[varName] !== undefined && row[varName] !== null) {
+      return String(row[varName]);
     }
 
-    // Case-insensitive fallback match
-    const lowerVar = trimmedVar.toLowerCase();
-    const matchingKey = Object.keys(row).find((k) => k.toLowerCase() === lowerVar);
-    if (matchingKey && row[matchingKey] !== undefined) {
-      return row[matchingKey];
+    // 2. Normalized key match (handles Arabic & case-insensitive matching)
+    const targetNorm = normalizeKey(varName);
+    const matchingKey = rowKeys.find((k) => normalizeKey(k) === targetNorm);
+    if (matchingKey && row[matchingKey] !== undefined && row[matchingKey] !== null) {
+      return String(row[matchingKey]);
     }
 
-    return `[${trimmedVar}]`; // Fallback placeholder if missing
+    // 3. Numerical column index match ({1} -> 1st column, {2} -> 2nd column)
+    if (/^\d+$/.test(varName)) {
+      const colIdx = parseInt(varName, 10) - 1; // 1-based index to 0-based
+      if (colIdx >= 0 && colIdx < rowKeys.length) {
+        const keyAtIdx = rowKeys[colIdx];
+        if (row[keyAtIdx] !== undefined && row[keyAtIdx] !== null) {
+          return String(row[keyAtIdx]);
+        }
+      }
+    }
+
+    // 4. Fallback if not found in CSV row: return empty string if blank, or key name
+    return '';
   });
 }
 
 /**
  * Builds the recipient queue by assigning exactly ONE randomly selected variation to each recipient.
- * Ensures zero duplicate messages per recipient.
+ * Formats phone numbers automatically with +20 Egypt / international prefix.
  */
 export function buildRecipientQueue(
   rows: CsvRow[],
   recipientColumn: string,
-  variations: MessageVariation[]
+  variations: MessageVariation[],
+  defaultCountryCode: string = '20'
 ): RecipientQueueItem[] {
   if (!rows || rows.length === 0 || !variations || variations.length === 0) {
     return [];
@@ -115,20 +146,23 @@ export function buildRecipientQueue(
   if (validVariations.length === 0) return [];
 
   return rows.map((row, index) => {
-    // Randomly select 1 variation from available non-empty variations
+    // Select variation
     const randomIndex = Math.floor(Math.random() * validVariations.length);
     const assignedVariation = validVariations[randomIndex];
 
-    // Determine recipient contact string (e.g. phone or email)
-    const recipientContact = row[recipientColumn] || row.__id || `Recipient #${index + 1}`;
+    // Determine raw contact string
+    const rawContact = String(row[recipientColumn] || row.__id || `Recipient #${index + 1}`);
 
-    // Render message text specifically for this recipient row
+    // Auto-format phone with +20 Egypt / country code prefix
+    const formattedContact = formatWhatsAppPhone(rawContact, defaultCountryCode) || rawContact;
+
+    // Render message text specifically for this recipient row (Arabic + English dynamic variables)
     const resolvedMessage = renderMessageTemplate(assignedVariation.content, row);
 
     return {
       id: `queue_${index + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       recipientId: row.__id,
-      recipientContact,
+      recipientContact: formattedContact,
       rowData: row,
       assignedVariation,
       resolvedMessage,
