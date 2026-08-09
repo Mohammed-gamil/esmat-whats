@@ -241,11 +241,12 @@ export async function getKv(): Promise<Kv> {
       port,
       password,
       lazyConnect: true,
-      connectTimeout: 3000,
+      connectTimeout: 2000,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
       retryStrategy: () => null,
     });
+    client.on("error", () => {});
     await client.connect();
     await client.ping();
     kvSingleton = new RedisKv(client);
