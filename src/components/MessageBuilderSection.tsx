@@ -36,20 +36,35 @@ export function MessageBuilderSection({
   const [activeVariationIndex, setActiveVariationIndex] = useState(0);
   const [previewRowIndex, setPreviewRowIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const csvHeaders = parseResult?.headers || [];
   const rows = parseResult?.rows || [];
   const currentVariation = variations[activeVariationIndex] || variations[0];
 
+  const [localContent, setLocalContent] = useState<string>(currentVariation?.content || '');
+
+  // Keep local content in sync when switching variations or when external variations update
+  React.useEffect(() => {
+    setLocalContent(currentVariation?.content || '');
+  }, [activeVariationIndex, currentVariation?.id]);
+
   const validation = validateVariablesAgainstHeaders(variations, csvHeaders);
 
   const handleTextareaChange = (val: string) => {
-    const updated = [...variations];
-    updated[activeVariationIndex] = {
-      ...updated[activeVariationIndex],
-      content: val,
-    };
-    onUpdateVariations(updated);
+    setLocalContent(val);
+
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      const updated = [...variations];
+      if (updated[activeVariationIndex]) {
+        updated[activeVariationIndex] = {
+          ...updated[activeVariationIndex],
+          content: val,
+        };
+        onUpdateVariations(updated);
+      }
+    }, 250);
   };
 
   const handleAddVariation = () => {
@@ -78,14 +93,13 @@ export function MessageBuilderSection({
     const tag = `{{${varName}}}`;
     const textarea = textareaRef.current;
     if (!textarea) {
-      handleTextareaChange((currentVariation?.content || '') + ' ' + tag);
+      handleTextareaChange(localContent + ' ' + tag);
       return;
     }
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const currentText = currentVariation?.content || '';
-    const newText = currentText.substring(0, start) + tag + currentText.substring(end);
+    const newText = localContent.substring(0, start) + tag + localContent.substring(end);
 
     handleTextareaChange(newText);
 
@@ -103,7 +117,7 @@ export function MessageBuilderSection({
 
   const currentPreviewRow: CsvRow | null = rows[previewRowIndex] || rows[0] || null;
   const renderedPreviewText = currentPreviewRow
-    ? renderMessageTemplate(currentVariation?.content || '', currentPreviewRow)
+    ? renderMessageTemplate(localContent, currentPreviewRow)
     : 'Upload CSV data to view live recipient preview.';
 
   return (
@@ -138,9 +152,9 @@ export function MessageBuilderSection({
 
       {/* Variable Validation Warning / Success Alert */}
       {csvHeaders.length > 0 && (
-        <div>
+        <div className="min-h-[44px] flex items-center">
           {!validation.isValid ? (
-            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-1">
+            <div className="w-full p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-1">
               <div className="flex items-center gap-2 font-semibold text-xs text-amber-200">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>Unmapped Dynamic Variables Detected:</span>
@@ -155,7 +169,7 @@ export function MessageBuilderSection({
               </p>
             </div>
           ) : validation.usedVariables.length > 0 ? (
-            <div className="p-3.5 rounded-xl bg-[#10b981]/15 border border-[#10b981]/30 text-[#10b981] flex items-center justify-between gap-3 text-xs">
+            <div className="w-full p-3 rounded-xl bg-[#10b981]/15 border border-[#10b981]/30 text-[#10b981] flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#10b981] shrink-0" />
                 <span>
@@ -163,7 +177,12 @@ export function MessageBuilderSection({
                 </span>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="w-full p-3 rounded-xl bg-[#081419] border border-white/10 text-white/50 flex items-center gap-2 text-xs">
+              <Info className="w-4 h-4 text-white/40 shrink-0" />
+              <span>Use double curly braces like &#123;&#123;name&#125;&#125; to insert dynamic recipient variables.</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -206,17 +225,17 @@ export function MessageBuilderSection({
               <span>Compose Message Content ({currentVariation?.title}):</span>
             </label>
             <span className="text-[11px] text-white/50 font-mono">
-              {currentVariation?.content.length || 0} characters
+              {localContent.length} characters
             </span>
           </div>
 
           <textarea
             ref={textareaRef}
-            value={currentVariation?.content || ''}
+            value={localContent}
             onChange={(e) => handleTextareaChange(e.target.value)}
             rows={7}
             placeholder="Type your message here... Use {{name}}, {{result}}, {{phone}} to insert dynamic variables."
-            className="w-full bg-[#081419] border border-white/10 rounded-xl p-4 text-xs font-sans text-white placeholder-white/30 focus:outline-none focus:border-[#f05a28] leading-relaxed shadow-inner"
+            className="w-full bg-[#081419] border border-white/10 rounded-xl p-4 text-xs font-sans text-white placeholder-white/30 focus:outline-none focus:border-[#f05a28] leading-relaxed shadow-inner resize-none"
           />
 
           {/* Quick Insert Variable Pills */}
@@ -296,7 +315,7 @@ export function MessageBuilderSection({
             )}
 
             {/* Simulated Chat Bubble */}
-            <div className="relative p-4 rounded-2xl bg-[#10b981]/10 border border-[#10b981]/30 text-slate-100 text-xs leading-relaxed space-y-2 shadow-lg">
+            <div className="relative p-4 rounded-2xl bg-[#10b981]/10 border border-[#10b981]/30 text-slate-100 text-xs leading-relaxed space-y-2 shadow-lg h-[160px] overflow-y-auto scrollbar-thin">
               <div className="flex items-center justify-between text-[10px] text-[#10b981] font-mono border-b border-[#10b981]/20 pb-1.5">
                 <span className="font-semibold">{currentVariation?.title}</span>
                 <span>Rendered Message</span>
