@@ -20,31 +20,86 @@ import { DelaySettingsSection } from './DelaySettingsSection';
 import { AutomationMonitorSection } from './AutomationMonitorSection';
 import { parseCsv, SAMPLE_CSV_DATASETS } from '@/lib/csv-parser';
 
+const DEFAULT_VARIATIONS: MessageVariation[] = [
+  {
+    id: 'var_default_1',
+    title: 'Variation 1 (Friendly & Direct)',
+    content:
+      'Hello {{name}}, your final exam result for {{course}} is now published: {{result}} (Grade: {{grade}}). Congratulations!',
+  },
+  {
+    id: 'var_default_2',
+    title: 'Variation 2 (Formal Announcement)',
+    content:
+      'Dear {{name}}, this is an official academic update regarding your {{course}} assessment. Status: {{result}} with Grade {{grade}}.',
+  },
+];
+
 export function CsvAutomationAgent() {
   const defaultSample = SAMPLE_CSV_DATASETS[0];
   const initialParse = parseCsv(defaultSample.csv, `${defaultSample.id}.csv`);
 
-  const [parseResult, setParseResult] = useState<CsvParseResult | null>(initialParse);
-
-  const [variations, setVariations] = useState<MessageVariation[]>([
-    {
-      id: 'var_default_1',
-      title: 'Variation 1 (Friendly & Direct)',
-      content:
-        'Hello {{name}}, your final exam result for {{course}} is now published: {{result}} (Grade: {{grade}}). Congratulations!',
-    },
-    {
-      id: 'var_default_2',
-      title: 'Variation 2 (Formal Announcement)',
-      content:
-        'Dear {{name}}, this is an official academic update regarding your {{course}} assessment. Status: {{result}} with Grade {{grade}}.',
-    },
-  ]);
-
-  const [delaySettings, setDelaySettings] = useState<DelaySettings>({
-    delayMinutes: 1,
-    customSeconds: 60,
+  const [parseResult, setParseResult] = useState<CsvParseResult | null>(() => {
+    if (typeof window === 'undefined') return initialParse;
+    try {
+      const saved = localStorage.getItem('whatsapp_agent_csv_parse_result');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return initialParse;
   });
+
+  const [variations, setVariations] = useState<MessageVariation[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VARIATIONS;
+    try {
+      const saved = localStorage.getItem('whatsapp_agent_variations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_VARIATIONS;
+  });
+
+  const [delaySettings, setDelaySettings] = useState<DelaySettings>(() => {
+    if (typeof window === 'undefined') return { delayMinutes: 1, customSeconds: 60 };
+    try {
+      const saved = localStorage.getItem('whatsapp_agent_delay_settings');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {}
+    return { delayMinutes: 1, customSeconds: 60 };
+  });
+
+  // Save to localStorage on changes
+  React.useEffect(() => {
+    if (parseResult) {
+      try {
+        localStorage.setItem('whatsapp_agent_csv_parse_result', JSON.stringify(parseResult));
+      } catch (e) {}
+    }
+  }, [parseResult]);
+
+  React.useEffect(() => {
+    if (variations.length > 0) {
+      try {
+        localStorage.setItem('whatsapp_agent_variations', JSON.stringify(variations));
+      } catch (e) {}
+    }
+  }, [variations]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('whatsapp_agent_delay_settings', JSON.stringify(delaySettings));
+    } catch (e) {}
+  }, [delaySettings]);
 
   const [insertedVarSignal, setInsertedVarSignal] = useState<{
     varName: string;

@@ -78,14 +78,12 @@ export function addExecutionLog(
 }
 
 /**
- * Simulates or sends a message to a recipient deterministically.
+ * Executes real message dispatch via OpenWA Gateway server proxy.
  */
 export async function sendRecipientMessage(
   item: RecipientQueueItem,
   onProgressLog?: (log: ExecutionLog) => void
 ): Promise<{ success: boolean; error?: string }> {
-  // Deterministic simulation/dispatch
-  // Check if phone/contact is present
   if (!item.recipientContact || item.recipientContact.trim() === '') {
     return {
       success: false,
@@ -93,18 +91,43 @@ export async function sendRecipientMessage(
     };
   }
 
-  // Small async tick to simulate network dispatch (e.g. gateway socket call)
-  await new Promise((resolve) => setTimeout(resolve, 400));
-
-  // 99% success rate simulation in standalone mode (unless test fails)
-  const isFailed = item.recipientContact.includes('000000') || item.recipientContact.toLowerCase().includes('invalid');
-
-  if (isFailed) {
+  const cleanPhone = item.recipientContact.replace(/[^\d]/g, '');
+  if (!cleanPhone || cleanPhone.length < 6) {
     return {
       success: false,
-      error: 'Gateway reported invalid recipient number formatting.',
+      error: `Invalid phone number format: "${item.recipientContact}". Minimum 6 digits required.`,
     };
   }
 
-  return { success: true };
+  try {
+    const res = await fetch('/api/whatsapp/sessions-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'send-text',
+        chatId: `${cleanPhone}@c.us`,
+        text: item.resolvedMessage,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success) {
+      return { success: true };
+    }
+
+    if (data.error) {
+      return { success: false, error: data.error };
+    }
+
+    return {
+      success: false,
+      error: `Gateway returned unexpected status ${res.status}`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to reach OpenWA Gateway server.',
+    };
+  }
 }

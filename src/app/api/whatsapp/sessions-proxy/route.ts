@@ -77,6 +77,53 @@ export async function POST(req: NextRequest) {
         const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/pairing-code`, { phoneNumber: cleanPhone }, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, pairing: res.data });
       }
+
+      if (action === "send-text") {
+        const rawChatId = String(body.chatId || "").trim();
+        const text = String(body.text || "").trim();
+
+        if (!rawChatId || !text) {
+          return NextResponse.json(
+            { success: false, error: "Missing required chatId or text payload" },
+            { status: 400 }
+          );
+        }
+
+        // 1. Resolve active/ready session ID from OpenWA Gateway
+        const listRes = await axios.get(`${targetUrl}/sessions`, { headers, timeout: 5000 }).catch(() => null);
+        let activeSessionId = id;
+
+        if (!activeSessionId && Array.isArray(listRes?.data) && listRes.data.length > 0) {
+          const readySess = listRes.data.find((s: any) => {
+            const st = (s.status || "").toLowerCase();
+            return st === "ready" || st === "working" || st === "connected" || st === "authenticated";
+          });
+          activeSessionId = readySess?.id || listRes.data[0]?.id;
+        }
+
+        if (!activeSessionId) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: "No active WhatsApp session connected. Please connect a WhatsApp session in Step 1 first.",
+            },
+            { status: 400 }
+          );
+        }
+
+        const cleanDigits = rawChatId.replace(/[^\d]/g, "");
+        const formattedChatId = rawChatId.endsWith("@g.us") || rawChatId.endsWith("@lid")
+          ? rawChatId
+          : `${cleanDigits}@c.us`;
+
+        const res = await axios.post(
+          `${targetUrl}/sessions/${encodeURIComponent(activeSessionId)}/messages/send-text`,
+          { chatId: formattedChatId, text },
+          { headers, timeout: 15000 }
+        );
+
+        return NextResponse.json({ success: true, result: res.data });
+      }
     } catch (apiError: any) {
       if (apiError.code === "ECONNREFUSED" || apiError.message?.includes("ECONNREFUSED")) {
         return NextResponse.json(
