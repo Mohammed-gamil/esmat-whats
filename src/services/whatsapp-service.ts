@@ -21,9 +21,6 @@ export interface ConnectLeadsInput {
 
 export class WhatsAppService {
   static getOpenWaApiKey(settingsApiKey?: string): string {
-    if (settingsApiKey && settingsApiKey.trim()) return settingsApiKey.trim();
-    if (process.env.OPENWA_API_KEY && process.env.OPENWA_API_KEY.trim()) return process.env.OPENWA_API_KEY.trim();
-
     const candidatePaths = [
       path.join(process.cwd(), "openwa", "data", ".api-key"),
       path.join(process.cwd(), "data", ".api-key"),
@@ -40,16 +37,26 @@ export class WhatsAppService {
       } catch (e) {}
     }
 
+    if (process.env.OPENWA_API_KEY && process.env.OPENWA_API_KEY.trim()) {
+      return process.env.OPENWA_API_KEY.trim();
+    }
+
+    if (settingsApiKey && settingsApiKey.trim()) {
+      return settingsApiKey.trim();
+    }
+
     return "";
   }
 
-  static getHeaders(apiKey: string) {
+  static getHeaders(apiKey?: string) {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "Accept": "application/json",
     };
-    if (apiKey) {
-      headers["X-API-Key"] = apiKey;
-      headers["Authorization"] = `Bearer ${apiKey}`;
+    const validKey = (apiKey && apiKey.trim()) || this.getOpenWaApiKey();
+    if (validKey) {
+      headers["X-API-Key"] = validKey;
+      headers["Authorization"] = `Bearer ${validKey}`;
     }
     return headers;
   }

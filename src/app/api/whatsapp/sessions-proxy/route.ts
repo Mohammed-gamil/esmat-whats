@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     const key = WhatsAppService.getOpenWaApiKey();
     if (key) {
       headers["X-API-Key"] = key;
+      headers["Authorization"] = `Bearer ${key}`;
     }
 
     try {
