@@ -165,10 +165,38 @@ export function OpenWaSessionCard({
     }
   };
 
+  // Inline QR state when status is qr_ready
+  const [inlineQrCode, setInlineQrCode] = useState<string | null>(null);
+  const [inlineQrLoading, setInlineQrLoading] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (statusLower === 'qr_ready') {
+      const fetchInlineQr = async () => {
+        setInlineQrLoading(true);
+        try {
+          const res = await client.fetchQrCode(session.id);
+          if (res && res.qrCode) {
+            setInlineQrCode(res.qrCode);
+          }
+        } catch (e) {
+          // ignore background poll errors
+        } finally {
+          setInlineQrLoading(false);
+        }
+      };
+
+      fetchInlineQr();
+      const interval = setInterval(fetchInlineQr, 8000);
+      return () => clearInterval(interval);
+    } else {
+      setInlineQrCode(null);
+    }
+  }, [session.id, statusLower]);
+
   return (
     <div className="glass-panel rounded-2xl p-5 shadow-xl space-y-4 relative overflow-hidden flex flex-col justify-between">
       {/* Session Title & Status Badge */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -210,6 +238,52 @@ export function OpenWaSessionCard({
             </span>
           </div>
         </div>
+
+        {/* PROMINENT INLINE QR DISPLAY PANEL (When status is qr_ready) */}
+        {statusLower === 'qr_ready' && (
+          <div className="p-4 rounded-2xl bg-[#081419] border border-amber-500/40 space-y-3 text-center shadow-lg">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-amber-400 font-bold flex items-center gap-1.5">
+                <QrCode className="w-4 h-4 animate-pulse" />
+                Scan to Authenticate:
+              </span>
+              <button
+                onClick={() => setShowQrModal(true)}
+                className="text-[11px] text-amber-300 hover:text-white underline font-semibold"
+              >
+                Or Use Pairing Code
+              </button>
+            </div>
+
+            {/* Spacious, Unclipped Pure-White QR Box Container */}
+            <div className="relative mx-auto w-64 h-64 sm:w-72 sm:h-72 bg-white rounded-2xl p-4 shadow-[0_0_30px_rgba(245,158,11,0.25)] border border-amber-500/30 flex items-center justify-center overflow-hidden">
+              {/* Corner Target Lines */}
+              <div className="absolute top-2 left-2 w-5 h-5 border-t-4 border-l-4 border-amber-500 rounded-tl-md pointer-events-none z-10" />
+              <div className="absolute top-2 right-2 w-5 h-5 border-t-4 border-r-4 border-amber-500 rounded-tr-md pointer-events-none z-10" />
+              <div className="absolute bottom-2 left-2 w-5 h-5 border-b-4 border-l-4 border-amber-500 rounded-bl-md pointer-events-none z-10" />
+              <div className="absolute bottom-2 right-2 w-5 h-5 border-b-4 border-r-4 border-amber-500 rounded-br-md pointer-events-none z-10" />
+
+              {inlineQrLoading && !inlineQrCode ? (
+                <div className="flex flex-col items-center justify-center space-y-2 text-slate-800">
+                  <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
+                  <span className="text-xs font-mono font-semibold">Loading QR Code...</span>
+                </div>
+              ) : inlineQrCode ? (
+                <img
+                  src={inlineQrCode}
+                  alt="WhatsApp QR Code"
+                  className="w-full h-full object-contain block mx-auto rounded-lg"
+                />
+              ) : (
+                <span className="text-xs text-slate-500">QR Code Generating...</span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-300">
+              Open WhatsApp on phone &gt; Linked Devices &gt; Scan QR code above
+            </p>
+          </div>
+        )}
 
         {/* Error message callout if present */}
         {session.lastError && (
