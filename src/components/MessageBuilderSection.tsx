@@ -36,35 +36,22 @@ export function MessageBuilderSection({
   const [activeVariationIndex, setActiveVariationIndex] = useState(0);
   const [previewRowIndex, setPreviewRowIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const csvHeaders = parseResult?.headers || [];
   const rows = parseResult?.rows || [];
   const currentVariation = variations[activeVariationIndex] || variations[0];
 
-  const [localContent, setLocalContent] = useState<string>(currentVariation?.content || '');
-
-  // Keep local content in sync when switching variations or when external variations update
-  React.useEffect(() => {
-    setLocalContent(currentVariation?.content || '');
-  }, [activeVariationIndex, currentVariation?.id]);
-
   const validation = validateVariablesAgainstHeaders(variations, csvHeaders);
 
   const handleTextareaChange = (val: string) => {
-    setLocalContent(val);
-
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      const updated = [...variations];
-      if (updated[activeVariationIndex]) {
-        updated[activeVariationIndex] = {
-          ...updated[activeVariationIndex],
-          content: val,
-        };
-        onUpdateVariations(updated);
-      }
-    }, 250);
+    const updated = [...variations];
+    if (updated[activeVariationIndex]) {
+      updated[activeVariationIndex] = {
+        ...updated[activeVariationIndex],
+        content: val,
+      };
+      onUpdateVariations(updated);
+    }
   };
 
   const handleAddVariation = () => {
@@ -92,14 +79,15 @@ export function MessageBuilderSection({
   const insertVariableAtCursor = (varName: string) => {
     const tag = `{{${varName}}}`;
     const textarea = textareaRef.current;
+    const currentText = currentVariation?.content || '';
     if (!textarea) {
-      handleTextareaChange(localContent + ' ' + tag);
+      handleTextareaChange(currentText + ' ' + tag);
       return;
     }
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const newText = localContent.substring(0, start) + tag + localContent.substring(end);
+    const newText = currentText.substring(0, start) + tag + currentText.substring(end);
 
     handleTextareaChange(newText);
 
@@ -117,7 +105,7 @@ export function MessageBuilderSection({
 
   const currentPreviewRow: CsvRow | null = rows[previewRowIndex] || rows[0] || null;
   const renderedPreviewText = currentPreviewRow
-    ? renderMessageTemplate(localContent, currentPreviewRow)
+    ? renderMessageTemplate(currentVariation?.content || '', currentPreviewRow)
     : 'Upload CSV data to view live recipient preview.';
 
   return (
@@ -225,13 +213,13 @@ export function MessageBuilderSection({
               <span>Compose Message Content ({currentVariation?.title}):</span>
             </label>
             <span className="text-[11px] text-white/50 font-mono">
-              {localContent.length} characters
+              {currentVariation?.content.length || 0} characters
             </span>
           </div>
 
           <textarea
             ref={textareaRef}
-            value={localContent}
+            value={currentVariation?.content || ''}
             onChange={(e) => handleTextareaChange(e.target.value)}
             rows={7}
             placeholder="Type your message here... Use {{name}}, {{result}}, {{phone}} to insert dynamic variables."
