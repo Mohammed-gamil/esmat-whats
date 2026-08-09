@@ -1,6 +1,24 @@
 name: whatsapp-sales-platform
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: whatsapp_sales_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: esmat_whatsapp_postgres_password_2026
+      POSTGRES_DB: whatsapp_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d whatsapp_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: .
@@ -12,7 +30,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: "file:./dev.db"
+      DATABASE_URL: "postgresql://postgres:esmat_whatsapp_postgres_password_2026@postgres:5432/whatsapp_platform?schema=public"
       OPENWA_URL: "http://gateway:2785"
       OPENWA_API_KEY: "${OPENWA_API_KEY:-esmat_whatsapp_master_key_2026}"
       API_MASTER_KEY: "${API_MASTER_KEY:-esmat_whatsapp_master_key_2026}"
@@ -23,11 +41,14 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
     volumes:
-      - ./dev.db:/app/dev.db
       - ./prisma:/app/prisma
     depends_on:
-      - gateway
-      - redis
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   gateway:
     build:
@@ -41,13 +62,24 @@ services:
       PORT: 2785
       API_MASTER_KEY: "${API_MASTER_KEY:-esmat_whatsapp_master_key_2026}"
       OPENWA_API_KEY: "${OPENWA_API_KEY:-esmat_whatsapp_master_key_2026}"
+      DATABASE_TYPE: "postgres"
+      DATABASE_HOST: "postgres"
+      DATABASE_PORT: 5432
+      DATABASE_NAME: "whatsapp_platform"
+      DATABASE_USERNAME: "postgres"
+      DATABASE_PASSWORD: "esmat_whatsapp_postgres_password_2026"
+      DATABASE_SYNCHRONIZE: "false"
       WEBHOOK_SSRF_PROTECT: "false"
       SSRF_ALLOWED_HOSTS: "app,localhost,127.0.0.1"
       AUTO_START_SESSIONS: "true"
+      SIMULATE_TYPING: "true"
     volumes:
       - ./openwa/data:/app/data
       - ./openwa/.wwebjs_auth:/app/.wwebjs_auth
       - ./openwa/.wwebjs_cache:/app/.wwebjs_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -57,6 +89,12 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
+  postgres_data:
   redis_data:
