@@ -54,7 +54,7 @@ export function parseNestJsError(error: any): string {
     msgStr.includes('ECONNREFUSED') ||
     msgStr.includes('Network error')
   ) {
-    return 'Network Connectivity Error: Unable to reach WhatsApp Gateway API. Please check your Gateway Base URL (e.g. http://localhost:2785/api), ensure the server is running, and verify network connectivity / CORS rules.';
+    return 'Unable to reach WhatsApp Gateway API server. Please ensure the gateway process is running.';
   }
 
   // NestJS structured error response
@@ -76,7 +76,7 @@ export function parseNestJsError(error: any): string {
 }
 
 /**
- * WhatsApp Gateway API Client Service
+ * WhatsApp Gateway API Client Service (Proxy-First Architecture)
  */
 export class OpenWaClient {
   private baseUrl: string;
@@ -87,35 +87,51 @@ export class OpenWaClient {
     this.apiKey = apiKey.trim();
   }
 
-  private get headers(): Record<string, string> {
-    return buildGatewayHeaders(this.apiKey);
+  /**
+   * Universal helper to route session actions through server proxy endpoint
+   */
+  private async callProxy<T>(action: string, payload: Record<string, any> = {}): Promise<T> {
+    try {
+      const res = await fetch('/api/whatsapp/sessions-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload }),
+        cache: 'no-store',
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Proxy error (Status ${res.status})`);
+      }
+
+      return data as T;
+    } catch (err: any) {
+      throw new Error(parseNestJsError(err));
+    }
   }
 
   /**
    * GET /api/sessions
-   * Fetches all sessions (bare array response, no envelope).
+   * Fetches all sessions.
    */
   async fetchSessions(): Promise<OpenWaSessionDto[]> {
-    const url = `${this.baseUrl}/sessions`;
     try {
+      const data: any = await this.callProxy('list');
+      return Array.isArray(data.sessions) ? data.sessions : [];
+    } catch (err) {
+      // Direct fallback if proxy is unavailable
+      const url = `${this.baseUrl}/sessions`;
       const res = await fetch(url, {
         method: 'GET',
-        headers: this.headers,
+        headers: buildGatewayHeaders(this.apiKey),
         cache: 'no-store',
       });
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
       }
-
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return data;
-      }
-      return [];
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
+      const direct = await res.json();
+      return Array.isArray(direct) ? direct : [];
     }
   }
 
@@ -124,23 +140,8 @@ export class OpenWaClient {
    * Fetches a single session by UUID or name.
    */
   async fetchSessionById(id: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}`;
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: this.headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('get', { id });
+    return data.session;
   }
 
   /**
@@ -148,25 +149,8 @@ export class OpenWaClient {
    * Creates a new session with strictly { name: string }.
    */
   async createSession(name: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions`;
-    const payload: CreateSessionPayload = { name: name.trim() };
-
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('create', { name: name.trim() });
+    return data.session;
   }
 
   /**
@@ -174,22 +158,8 @@ export class OpenWaClient {
    * Starts a session and initializes WhatsApp connection.
    */
   async startSession(id: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/start`;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('start', { id });
+    return data.session;
   }
 
   /**
@@ -197,22 +167,8 @@ export class OpenWaClient {
    * Stops a session and disconnects WhatsApp.
    */
   async stopSession(id: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/stop`;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('stop', { id });
+    return data.session;
   }
 
   /**
@@ -220,22 +176,8 @@ export class OpenWaClient {
    * Logs out of WhatsApp (unlinks companion device).
    */
   async logoutSession(id: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/logout`;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('logout', { id });
+    return data.session;
   }
 
   /**
@@ -243,43 +185,16 @@ export class OpenWaClient {
    * SIGKILL stuck session engine.
    */
   async forceKillSession(id: string): Promise<OpenWaSessionDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/force-kill`;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('force-kill', { id });
+    return data.session;
   }
 
   /**
    * DELETE /api/sessions/{id}
-   * Removes session entirely from gateway (204 No Content).
+   * Removes session entirely from gateway.
    */
   async deleteSession(id: string): Promise<void> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}`;
-    try {
-      const res = await fetch(url, {
-        method: 'DELETE',
-        headers: this.headers,
-      });
-
-      if (!res.ok && res.status !== 204) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    await this.callProxy('delete', { id });
   }
 
   /**
@@ -287,23 +202,8 @@ export class OpenWaClient {
    * Returns QR code dataURL string when status is qr_ready.
    */
   async fetchQrCode(id: string): Promise<QrCodeResponseDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/qr`;
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: this.headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('qr', { id });
+    return data.qr;
   }
 
   /**
@@ -311,25 +211,7 @@ export class OpenWaClient {
    * Requests an 8-character pairing text code for linking via phone number.
    */
   async requestPairingCode(id: string, phoneNumber: string): Promise<PairingCodeResponseDto> {
-    const url = `${this.baseUrl}/sessions/${encodeURIComponent(id)}/pairing-code`;
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const payload: RequestPairingCodePayload = { phoneNumber: cleanPhone };
-
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseNestJsError({ response: { status: res.status, data: errData } }));
-      }
-
-      return await res.json();
-    } catch (err: any) {
-      throw new Error(parseNestJsError(err));
-    }
+    const data: any = await this.callProxy('pairing-code', { id, phoneNumber });
+    return data.pairing;
   }
 }

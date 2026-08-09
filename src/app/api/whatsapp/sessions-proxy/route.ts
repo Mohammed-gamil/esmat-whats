@@ -9,7 +9,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { action, id, name, phoneNumber } = body;
 
-    const targetUrl = (process.env.OPENWA_GATEWAY_URL || "http://localhost:2785/api").replace(/\/+$/, "");
+    const rawUrl = process.env.OPENWA_GATEWAY_URL || process.env.OPENWA_URL || "http://localhost:2785";
+    let targetUrl = rawUrl.trim().replace(/\/+$/, "");
+    if (!targetUrl.endsWith("/api")) {
+      targetUrl = `${targetUrl}/api`;
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -27,47 +32,48 @@ export async function POST(req: NextRequest) {
       }
 
       if (action === "get" && id) {
-        const res = await axios.get(`${targetUrl}/sessions/${id}`, { headers, timeout: 8000 });
+        const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}`, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "create" && name) {
-        const res = await axios.post(`${targetUrl}/sessions`, { name }, { headers, timeout: 8000 });
+        const res = await axios.post(`${targetUrl}/sessions`, { name: name.trim() }, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "start" && id) {
-        const res = await axios.post(`${targetUrl}/sessions/${id}/start`, {}, { headers, timeout: 8000 });
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/start`, {}, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "stop" && id) {
-        const res = await axios.post(`${targetUrl}/sessions/${id}/stop`, {}, { headers, timeout: 8000 });
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/stop`, {}, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "logout" && id) {
-        const res = await axios.post(`${targetUrl}/sessions/${id}/logout`, {}, { headers, timeout: 8000 });
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/logout`, {}, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "force-kill" && id) {
-        const res = await axios.post(`${targetUrl}/sessions/${id}/force-kill`, {}, { headers, timeout: 8000 });
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/force-kill`, {}, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, session: res.data });
       }
 
       if (action === "delete" && id) {
-        await axios.delete(`${targetUrl}/sessions/${id}`, { headers, timeout: 8000 });
+        await axios.delete(`${targetUrl}/sessions/${encodeURIComponent(id)}`, { headers, timeout: 8000 });
         return NextResponse.json({ success: true });
       }
 
       if (action === "qr" && id) {
-        const res = await axios.get(`${targetUrl}/sessions/${id}/qr`, { headers, timeout: 8000 });
+        const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}/qr`, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, qr: res.data });
       }
 
       if (action === "pairing-code" && id) {
-        const res = await axios.post(`${targetUrl}/sessions/${id}/pairing-code`, { phoneNumber }, { headers, timeout: 8000 });
+        const cleanPhone = (phoneNumber || "").replace(/[^0-9]/g, "");
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/pairing-code`, { phoneNumber: cleanPhone }, { headers, timeout: 8000 });
         return NextResponse.json({ success: true, pairing: res.data });
       }
     } catch (apiError: any) {
