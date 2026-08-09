@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, id, name, phoneNumber, simulateTyping, defaultCountryCode } = body;
+    const { action, id, name, phoneNumber, simulateTyping, defaultCountryCode, groupId } = body;
 
     const rawUrl = process.env.OPENWA_GATEWAY_URL || process.env.OPENWA_URL || "http://localhost:2785";
     let targetUrl = rawUrl.trim().replace(/\/+$/, "");
@@ -80,6 +80,16 @@ export async function POST(req: NextRequest) {
         const cleanPhone = formatWhatsAppPhone(phoneNumber || "", defaultCountryCode || "20");
         const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/pairing-code`, { phoneNumber: cleanPhone }, { headers, timeout: HTTP_TIMEOUT });
         return NextResponse.json({ success: true, pairing: res.data });
+      }
+
+      if (action === "groups" && id) {
+        const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups`, { headers, timeout: 20000 });
+        return NextResponse.json({ success: true, groups: res.data });
+      }
+
+      if (action === "group-info" && id && groupId) {
+        const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}`, { headers, timeout: 20000 });
+        return NextResponse.json({ success: true, groupInfo: res.data });
       }
 
       if (action === "send-text") {

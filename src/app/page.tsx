@@ -3,10 +3,11 @@
 import React, { useState } from 'react';
 import { CsvAutomationAgent } from '@/components/CsvAutomationAgent';
 import { OpenWaSessionsView } from '@/components/OpenWaSessionsView';
-import { ShieldCheck, Zap, Sliders, Layers, FileSpreadsheet } from 'lucide-react';
+import { GroupNumbersExtractor } from '@/components/GroupNumbersExtractor';
+import { Zap, Layers, FileSpreadsheet, Users } from 'lucide-react';
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'automation' | 'sessions'>('automation');
+  const [activeTab, setActiveTab] = useState<'automation' | 'sessions' | 'groups'>('automation');
 
   return (
     <main className="min-h-screen text-white p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
@@ -30,7 +31,7 @@ export default function Home() {
         </div>
 
         {/* Navigation Tabs Header Switcher */}
-        <div className="flex items-center gap-2 p-1 rounded-xl bg-[#081419] border border-white/10">
+        <div className="flex items-center gap-2 p-1 rounded-xl bg-[#081419] border border-white/10 flex-wrap">
           <button
             type="button"
             onClick={() => setActiveTab('automation')}
@@ -42,6 +43,19 @@ export default function Home() {
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>CSV & Excel Automation Agent</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('groups')}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'groups'
+                ? 'bg-brand-gradient text-white shadow-md font-bold'
+                : 'text-white/60 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4 text-amber-400" />
+            <span>Group Numbers Extractor</span>
           </button>
 
           <button
@@ -62,6 +76,8 @@ export default function Home() {
       {/* Tab Content Rendering */}
       {activeTab === 'automation' ? (
         <CsvAutomationAgent />
+      ) : activeTab === 'groups' ? (
+        <GroupNumbersExtractor onImportToAutomation={() => setActiveTab('automation')} />
       ) : (
         <OpenWaSessionsView />
       )}
