@@ -630,8 +630,9 @@ export function Sessions() {
             {!pairingMode ? (
               // QR Code Content
               qrData.qrCode ? (
-                <>
-                  <img src={qrData.qrCode} alt="QR" style={{ maxWidth: '280px', borderRadius: '12px' }} />
+                  <div style={{ background: '#ffffff', padding: '16px', borderRadius: '20px', boxShadow: '0 8px 30px rgba(0,0,0,0.12)', display: 'inline-block', margin: '0 auto 1rem auto' }}>
+                    <img src={qrData.qrCode} alt="QR" style={{ maxWidth: '280px', width: '100%', height: 'auto', display: 'block', borderRadius: '12px' }} />
+                  </div>
                   <div className="qr-instructions">
                     <p className="qr-step">
                       <Trans i18nKey="sessions.qr.step1" components={{ strong: <strong /> }} />

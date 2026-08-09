@@ -492,7 +492,7 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       // qrCode is only touched once the fence re-proves the source client and the finished flags.
       const sourceClient = this.client;
       try {
-        const encodedQr = await qrcode.toDataURL(qr);
+        const encodedQr = await qrcode.toDataURL(qr, { margin: 2, width: 360 });
         // Post-await fence: the encode resolved, but the source client may have disconnected or been
         // replaced while we were waiting. Re-check the live client identity and the finished flags before
         // assigning state, publishing a QR, or driving any downstream callback/webhook — a late encode for

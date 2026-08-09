@@ -454,7 +454,7 @@ export class BaileysLifecycle {
   /** Render the raw Baileys QR ref to a PNG data URL, then publish it (mirrors the whatsapp-web.js engine). */
   private async handleQrCode(qr: string): Promise<void> {
     try {
-      this.qrCode = await qrcode.toDataURL(qr);
+      this.qrCode = await qrcode.toDataURL(qr, { margin: 2, width: 360 });
       this.setStatus(EngineStatus.QR_READY);
       this.host.getOnQRCode()?.(this.qrCode);
     } catch (error) {

@@ -177,48 +177,71 @@ export function OpenWaQrPairingModal({
         {/* Tab 1: QR Code View */}
         {activeTab === 'qr' && (
           <div className="space-y-4 text-center">
+            <style>{`
+              @keyframes qrScanLine {
+                0% { top: 6%; opacity: 0; }
+                15% { opacity: 0.9; }
+                85% { opacity: 0.9; }
+                100% { top: 90%; opacity: 0; }
+              }
+              .animate-qr-scan {
+                animation: qrScanLine 2.5s ease-in-out infinite;
+              }
+            `}</style>
+
             <p className="text-xs text-slate-300">
               Open WhatsApp on your mobile phone &gt; Settings &gt; Linked Devices &gt; Link a Device, and scan the QR code below:
             </p>
 
-            <div className="relative mx-auto w-64 h-64 bg-white rounded-2xl p-3 border-4 border-[#f05a28]/30 shadow-2xl flex items-center justify-center">
+            {/* Spacious, High-Res QR Card with Target Brackets & Laser Scan */}
+            <div className="relative mx-auto w-72 h-72 sm:w-80 sm:h-80 bg-white rounded-3xl p-5 border border-white/20 shadow-[0_0_50px_rgba(240,90,40,0.25)] flex items-center justify-center overflow-hidden">
+              {/* High-tech Corner Target Brackets */}
+              <div className="absolute top-2 left-2 w-6 h-6 border-t-4 border-l-4 border-[#f05a28] rounded-tl-xl pointer-events-none z-10" />
+              <div className="absolute top-2 right-2 w-6 h-6 border-t-4 border-r-4 border-[#f05a28] rounded-tr-xl pointer-events-none z-10" />
+              <div className="absolute bottom-2 left-2 w-6 h-6 border-b-4 border-l-4 border-[#f05a28] rounded-bl-xl pointer-events-none z-10" />
+              <div className="absolute bottom-2 right-2 w-6 h-6 border-b-4 border-r-4 border-[#f05a28] rounded-br-xl pointer-events-none z-10" />
+
               {loadingQr && !qrCodeData ? (
-                <div className="flex flex-col items-center justify-center text-slate-800 space-y-2">
-                  <RefreshCw className="w-8 h-8 animate-spin text-[#f05a28]" />
-                  <span className="text-xs font-mono font-semibold">Generating QR Code...</span>
+                <div className="flex flex-col items-center justify-center text-slate-800 space-y-3">
+                  <RefreshCw className="w-10 h-10 animate-spin text-[#f05a28]" />
+                  <span className="text-xs font-mono font-semibold text-slate-600">Generating HD QR Code...</span>
                 </div>
               ) : qrError && !qrCodeData ? (
-                <div className="p-3 text-center text-xs text-rose-600 space-y-2">
-                  <AlertCircle className="w-6 h-6 mx-auto text-rose-500" />
-                  <span>{qrError}</span>
+                <div className="p-4 text-center text-xs text-rose-600 space-y-3">
+                  <AlertCircle className="w-8 h-8 mx-auto text-rose-500" />
+                  <span className="block font-medium">{qrError}</span>
                   <button
                     onClick={fetchQr}
-                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-900 rounded font-semibold text-[11px]"
+                    className="px-4 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-xs shadow-sm transition-all"
                   >
                     Retry Fetching QR
                   </button>
                 </div>
               ) : qrCodeData ? (
-                <img
-                  src={qrCodeData}
-                  alt="WhatsApp Gateway QR Code"
-                  className="w-full h-full object-contain rounded-lg"
-                />
+                <div className="relative w-full h-full flex items-center justify-center">
+                  <img
+                    src={qrCodeData}
+                    alt="WhatsApp Gateway QR Code"
+                    className="w-full h-full object-contain block mx-auto rounded-xl"
+                  />
+                  {/* Subtle Laser Scanner Animation Line */}
+                  <div className="absolute left-1 right-1 h-1 bg-gradient-to-r from-transparent via-[#f05a28] to-transparent shadow-[0_0_12px_#f05a28] animate-qr-scan pointer-events-none z-20" />
+                </div>
               ) : (
                 <span className="text-xs text-slate-500">QR Code Unavailable</span>
               )}
             </div>
 
             {/* QR Refetch Counter */}
-            <div className="flex items-center justify-between px-4 py-2 rounded-xl bg-[#081419] border border-white/10 text-xs font-mono">
-              <span className="text-white/50 flex items-center gap-1.5">
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingQr ? 'animate-spin text-[#ff8c5a]' : 'text-slate-400'}`} />
-                Auto-refreshes in {qrRefreshSeconds}s
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-[#081419] border border-white/10 text-xs font-mono">
+              <span className="text-white/60 flex items-center gap-2">
+                <RefreshCw className={`w-4 h-4 ${loadingQr ? 'animate-spin text-[#ff8c5a]' : 'text-slate-400'}`} />
+                Auto-refreshes in <span className="text-[#ff8c5a] font-bold">{qrRefreshSeconds}s</span>
               </span>
               <button
                 onClick={fetchQr}
                 disabled={loadingQr}
-                className="text-[#ff8c5a] hover:underline font-bold"
+                className="text-[#ff8c5a] hover:text-[#ffa77f] font-bold underline transition-colors"
               >
                 Refresh Now
               </button>
