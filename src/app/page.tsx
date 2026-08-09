@@ -32,8 +32,9 @@ export default function Home() {
         {/* Navigation Tabs Header Switcher */}
         <div className="flex items-center gap-2 p-1 rounded-xl bg-[#081419] border border-white/10">
           <button
+            type="button"
             onClick={() => setActiveTab('automation')}
-            className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'automation'
                 ? 'bg-brand-gradient text-white shadow-md font-bold'
                 : 'text-white/60 hover:text-white'
@@ -44,8 +45,9 @@ export default function Home() {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('sessions')}
-            className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'sessions'
                 ? 'bg-brand-gradient text-white shadow-md font-bold'
                 : 'text-white/60 hover:text-white'
