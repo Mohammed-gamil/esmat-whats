@@ -64,9 +64,10 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "${CYAN}▸ Executing sequential container builds (prevents memory spikes)...${NC}"
 
-# Set Node build memory limit to 1.5 GB per build process
+# Set Node build memory limit to 1.5 GB per build process & enable live progress logging
 export NODE_OPTIONS="--max-old-space-size=1536"
 export DOCKER_BUILDKIT=1
+export BUILDKIT_PROGRESS=plain
 
 echo -e "${CYAN}  1/4 Building PostgreSQL & Redis services...${NC}"
 docker compose build postgres redis
