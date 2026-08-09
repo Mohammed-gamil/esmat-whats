@@ -45,24 +45,18 @@ export function OpenWaSessionsView() {
       const data = await proxyRes.json();
       if (data.success && Array.isArray(data.sessions)) {
         setSessions(data.sessions);
+      } else if (data.error) {
+        setGlobalError(data.error);
       } else {
-        // Fallback to direct client call if proxy is unavailable
         const client = new OpenWaClient();
         const directSessions = await client.fetchSessions();
         setSessions(directSessions);
       }
     } catch (err: any) {
-      // Direct fallback
-      try {
-        const client = new OpenWaClient();
-        const directSessions = await client.fetchSessions();
-        setSessions(directSessions);
-      } catch (fallbackErr: any) {
-        setGlobalError(
-          fallbackErr.message ||
-            'Unable to connect to WhatsApp Gateway server. Please ensure the gateway process is running.'
-        );
-      }
+      setGlobalError(
+        err.message ||
+          'Unable to connect to WhatsApp Gateway server. Please ensure the gateway process is running.'
+      );
     } finally {
       setLoading(false);
     }

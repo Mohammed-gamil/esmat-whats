@@ -25,6 +25,7 @@ export class WhatsAppService {
       path.join(process.cwd(), "openwa", "data", ".api-key"),
       path.join(process.cwd(), "data", ".api-key"),
       path.join(__dirname, "..", "..", "openwa", "data", ".api-key"),
+      path.join(__dirname, "..", "..", "..", "openwa", "data", ".api-key"),
       "/home/medochi/whatsapp-agent-standalone/openwa/data/.api-key",
     ];
 
@@ -45,7 +46,7 @@ export class WhatsAppService {
       return settingsApiKey.trim();
     }
 
-    return "";
+    return "owa_k1_f1043fb6e66f6fa0f1334e2592b91108be8e96d5312f7ad32ad6d705ff2150b9";
   }
 
   static getHeaders(apiKey?: string) {
