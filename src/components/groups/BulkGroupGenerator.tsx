@@ -301,7 +301,7 @@ export function BulkGroupGenerator({ sessions, selectedSessionId }: BulkGroupGen
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 font-bold text-sm text-white">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              <span>Group Created: "{groupName}"</span>
+              <span>Group Created: &quot;{groupName}&quot;</span>
             </div>
             <span className="text-xs font-mono text-emerald-400 font-bold">{createdGroupId}</span>
           </div>
