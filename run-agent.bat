@@ -8,19 +8,23 @@ echo  🤖 WhatsApp AI Sales Agent & OpenWA Gateway Local Launcher
 echo ======================================================================
 echo.
 
-:: 1. Check Node.js
+:: 1. Check Node.js — Auto Install if missing
 where node >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [X] ERROR: Node.js is not installed!
+    echo [!] Node.js is not installed on this PC.
+    echo [!] Automatically downloading & installing Node.js LTS for you...
     echo.
-    echo Please download and install Node.js (v20 or v22 LTS) from:
-    echo https://nodejs.org
-    echo.
-    pause
-    exit /b 1
+    powershell -Command "start-process winget -ArgumentList 'install --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements' -Wait" 2>nul
+    where node >nul 2>nul
+    if %errorlevel% neq 0 (
+        echo [!] Winget fallback: Downloading official Node.js installer from nodejs.org...
+        powershell -Command "$msi = '$env:TEMP\node-setup.msi'; Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.11.0/node-v22.11.0-x64.msi' -OutFile $msi; Start-Process msiexec.exe -ArgumentList '/i', $msi, '/qb' -Wait; Remove-Item $msi"
+    )
+    echo [✓] Node.js installed successfully!
+    set "PATH=%ProgramFiles%\nodejs;%APPDATA%\npm;%PATH%"
 )
 
-:: 2. Check dependencies
+:: 2. Check and Install Dependencies
 if not exist node_modules (
     echo [!] Installing dependencies for the first run (this may take 1-2 minutes)...
     call npm install
