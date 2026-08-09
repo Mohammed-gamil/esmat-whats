@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { CsvAutomationAgent } from '@/components/CsvAutomationAgent';
 import { OpenWaSessionsView } from '@/components/OpenWaSessionsView';
-import { GroupNumbersExtractor } from '@/components/GroupNumbersExtractor';
+import { GroupSuiteManager } from '@/components/groups/GroupSuiteManager';
 import { Zap, Layers, FileSpreadsheet, Users } from 'lucide-react';
 
 export default function Home() {
@@ -55,7 +55,7 @@ export default function Home() {
             }`}
           >
             <Users className="w-4 h-4 text-amber-400" />
-            <span>Group Numbers Extractor</span>
+            <span>WhatsApp Group Suite (4 Tools)</span>
           </button>
 
           <button
@@ -77,7 +77,7 @@ export default function Home() {
       {activeTab === 'automation' ? (
         <CsvAutomationAgent />
       ) : activeTab === 'groups' ? (
-        <GroupNumbersExtractor onImportToAutomation={() => setActiveTab('automation')} />
+        <GroupSuiteManager onImportToAutomation={() => setActiveTab('automation')} />
       ) : (
         <OpenWaSessionsView />
       )}

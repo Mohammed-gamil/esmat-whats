@@ -8,7 +8,18 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, id, name, phoneNumber, simulateTyping, defaultCountryCode, groupId } = body;
+    const {
+      action,
+      id,
+      name,
+      phoneNumber,
+      simulateTyping,
+      defaultCountryCode,
+      groupId,
+      inviteCode,
+      participants,
+      description,
+    } = body;
 
     const rawUrl = process.env.OPENWA_GATEWAY_URL || process.env.OPENWA_URL || "http://localhost:2785";
     let targetUrl = rawUrl.trim().replace(/\/+$/, "");
@@ -90,6 +101,37 @@ export async function POST(req: NextRequest) {
       if (action === "group-info" && id && groupId) {
         const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}`, { headers, timeout: 20000 });
         return NextResponse.json({ success: true, groupInfo: res.data });
+      }
+
+      // Feature #2: Join Group via invite code
+      if (action === "join-group" && id && inviteCode) {
+        const cleanCode = String(inviteCode).trim().replace(/^https?:\/\/chat\.whatsapp\.com\//, '').replace(/\//g, '');
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/join`, { inviteCode: cleanCode }, { headers, timeout: HTTP_TIMEOUT });
+        return NextResponse.json({ success: true, result: res.data });
+      }
+
+      // Feature #3: Add participants to existing group
+      if (action === "add-participants" && id && groupId && Array.isArray(participants)) {
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}/participants`, { participants }, { headers, timeout: HTTP_TIMEOUT });
+        return NextResponse.json({ success: true, result: res.data });
+      }
+
+      // Feature #4: Create new group
+      if (action === "create-group" && id && name && Array.isArray(participants)) {
+        const res = await axios.post(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups`, { name: name.trim(), participants }, { headers, timeout: HTTP_TIMEOUT });
+        return NextResponse.json({ success: true, group: res.data });
+      }
+
+      // Feature #4: Set group description
+      if (action === "set-group-description" && id && groupId && description !== undefined) {
+        const res = await axios.put(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}/description`, { description: String(description).trim() }, { headers, timeout: 20000 });
+        return NextResponse.json({ success: true, result: res.data });
+      }
+
+      // Feature #4: Get group invite code/link
+      if (action === "get-invite-code" && id && groupId) {
+        const res = await axios.get(`${targetUrl}/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupId)}/invite-code`, { headers, timeout: 15000 });
+        return NextResponse.json({ success: true, invite: res.data });
       }
 
       if (action === "send-text") {
