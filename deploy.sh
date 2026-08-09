@@ -36,14 +36,13 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# Step 2: Clean Stale Docker Cache & Reclaim Disk Space
+# Step 2: Clean Stale Images & System Logs (Preserves Build Cache)
 # ------------------------------------------------------------------------------
-echo -e "${CYAN}▸ Deep cleaning Docker cache, unused images, and system logs to free disk space...${NC}"
-docker system prune -a -f --volumes || true
-docker builder prune -a -f || true
+echo -e "${CYAN}▸ Cleaning unused dangling images and system logs...${NC}"
+docker image prune -f || true
 sudo apt-get clean || true
 sudo journalctl --vacuum-time=1d || true
-echo -e "${GREEN}✓ Reclaimed Docker & system disk space!${NC}"
+echo -e "${GREEN}✓ Cleaned system logs & dangling images (Build cache preserved)!${NC}"
 
 # ------------------------------------------------------------------------------
 # Step 3: Git Pull Latest Code
