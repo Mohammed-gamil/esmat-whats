@@ -13,7 +13,7 @@ COPY prisma ./prisma
 RUN cp prisma/schema.postgres.prisma prisma/schema.prisma && npx prisma generate
 
 COPY . .
-RUN npm run build
+RUN mkdir -p public && npm run build
 
 # Stage 2: Production Runner
 FROM node:22-alpine AS runner
