@@ -66,13 +66,24 @@ export class WhatsAppService {
     return headers;
   }
 
+  static normalizeGatewayUrl(rawUrl?: string): string {
+    const fallback = process.env.OPENWA_URL || "http://localhost:2785";
+    let clean = (rawUrl && rawUrl.trim()) || fallback;
+    clean = clean.replace(/\/+$/, "");
+    if (clean.endsWith("/api")) {
+      clean = clean.substring(0, clean.length - 4).replace(/\/+$/, "");
+    }
+    return clean;
+  }
+
   private static sanitizeSessionId(sessionId: string): string {
     return sessionId.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
   }
 
   static async resolveSessionUuid(sessionId: string, gatewayUrl: string, headers: Record<string, string>): Promise<string> {
+    const base = this.normalizeGatewayUrl(gatewayUrl);
     try {
-      const listRes = await axios.get(`${gatewayUrl}/api/sessions`, {
+      const listRes = await axios.get(`${base}/api/sessions`, {
         headers,
         timeout: 3000,
       });
@@ -94,7 +105,7 @@ export class WhatsAppService {
 
     try {
       const createRes = await axios.post(
-        `${gatewayUrl}/api/sessions`,
+        `${base}/api/sessions`,
         { name: sessionId },
         { headers, timeout: 5000 }
       );
@@ -107,20 +118,21 @@ export class WhatsAppService {
   }
 
   static async ensureWebhook(sessionIdentifier: string, gatewayUrl: string, headers: Record<string, string>) {
+    const base = this.normalizeGatewayUrl(gatewayUrl);
     const sessionUuid = await this.resolveSessionUuid(sessionIdentifier, gatewayUrl, headers);
     const webhookUrl =
       process.env.WHATSAPP_WEBHOOK_URL?.trim() ||
       `http://localhost:${process.env.PORT || 3000}/api/whatsapp/webhook`;
     try {
       const existing = await axios.get(
-        `${gatewayUrl}/api/sessions/${sessionUuid}/webhooks`,
+        `${base}/api/sessions/${sessionUuid}/webhooks`,
         { headers, timeout: 3000 }
       );
       if (Array.isArray(existing.data)) {
         for (const w of existing.data) {
           if (w.url === webhookUrl) {
             await axios.patch(
-              `${gatewayUrl}/api/sessions/${sessionUuid}/webhooks/${w.id}`,
+              `${base}/api/sessions/${sessionUuid}/webhooks/${w.id}`,
               { active: true, events: ["*"] },
               { headers, timeout: 3000 }
             ).catch(() => {});
@@ -132,7 +144,7 @@ export class WhatsAppService {
 
     try {
       await axios.post(
-        `${gatewayUrl}/api/sessions/${sessionUuid}/webhooks`,
+        `${base}/api/sessions/${sessionUuid}/webhooks`,
         { url: webhookUrl, events: ["*"] },
         { headers, timeout: 5000 }
       );
