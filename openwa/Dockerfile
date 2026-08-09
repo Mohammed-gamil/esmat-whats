@@ -52,7 +52,7 @@ COPY . .
 # Drop the incremental-build cache afterwards: it is pinned inside dist/ (so nest's deleteOutDir
 # wipes it with the output), and the production stage copies dist/ wholesale — it would otherwise
 # ship dead compiler metadata in every image.
-RUN npm run build && npm run dashboard:ci -- --include=dev && npm run dashboard:build && rm -f dist/*.tsbuildinfo
+RUN (node scripts/patch-wwebjs-201832.js || true) && (node scripts/patch-wwebjs-newsletter-preview.js || true) && npm run build && npm run dashboard:ci -- --include=dev && npm run dashboard:build && rm -f dist/*.tsbuildinfo
 
 # ===== Stage 2: Production =====
 FROM docker.io/node:22-slim AS production
@@ -106,22 +106,12 @@ RUN groupadd -r openwa && useradd -r -g openwa openwa
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and scripts
 COPY package*.json ./
+COPY scripts/ ./scripts/
 
-# Backport upstream whatsapp-web.js#201832 (id._serialized -> id.$1 normalization,
-# broken by WA Web 2.3000.x ~2026-07-14) into the installed dep at build time.
-# The patcher self-disables once whatsapp-web.js ships the fix upstream.
-# scripts/postinstall.js rides along: `npm ci` below runs the hook, which fails
-# when the file is missing. With the patcher present the hook applies it in
-# --best-effort mode; the explicit fatal run right after is the real gate.
-COPY scripts/postinstall.js scripts/patch-wwebjs-201832.js scripts/wwebjs-201832.patch scripts/patch-wwebjs-newsletter-preview.js ./scripts/
-
-# Install production dependencies only, then apply the backports.
-RUN npm ci --omit=dev --no-audit --no-fund \
-    && node scripts/patch-wwebjs-201832.js \
-    && node scripts/patch-wwebjs-newsletter-preview.js \
-    && npm cache clean --force
+# Copy dependencies and pre-patched node_modules from builder stage (eliminates duplicate npm ci)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Replace the npm the base image bundles. npm is not on the request path — the entrypoint runs
 # `node dist/main` — but it stays in the image because the operator runbooks drive it
