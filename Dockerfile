@@ -1,6 +1,7 @@
 # Stage 1: Build & Dependencies
 FROM node:22-alpine AS builder
 WORKDIR /app
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 # Install dependencies required for native modules & Prisma
 RUN apk add --no-cache openssl

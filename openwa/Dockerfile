@@ -12,12 +12,15 @@
 FROM --platform=$BUILDPLATFORM docker.io/node:22-slim AS builder
 
 WORKDIR /app
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 
-# Install build dependencies
+# Install build dependencies including git and patch
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
+    git \
+    patch \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
