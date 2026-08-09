@@ -39,67 +39,63 @@ export function CsvAutomationAgent() {
   const defaultSample = SAMPLE_CSV_DATASETS[0];
   const initialParse = parseCsv(defaultSample.csv, `${defaultSample.id}.csv`);
 
-  const [parseResult, setParseResult] = useState<CsvParseResult | null>(() => {
-    if (typeof window === 'undefined') return initialParse;
-    try {
-      const saved = localStorage.getItem('whatsapp_agent_csv_parse_result');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {}
-    return initialParse;
+  const [parseResult, setParseResult] = useState<CsvParseResult | null>(initialParse);
+  const [variations, setVariations] = useState<MessageVariation[]>(DEFAULT_VARIATIONS);
+  const [delaySettings, setDelaySettings] = useState<DelaySettings>({
+    delayMinutes: 1,
+    customSeconds: 60,
   });
+  const [isMounted, setIsMounted] = useState(false);
 
-  const [variations, setVariations] = useState<MessageVariation[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_VARIATIONS;
-    try {
-      const saved = localStorage.getItem('whatsapp_agent_variations');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_VARIATIONS;
-  });
-
-  const [delaySettings, setDelaySettings] = useState<DelaySettings>(() => {
-    if (typeof window === 'undefined') return { delayMinutes: 1, customSeconds: 60 };
-    try {
-      const saved = localStorage.getItem('whatsapp_agent_delay_settings');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {}
-    return { delayMinutes: 1, customSeconds: 60 };
-  });
-
-  // Save to localStorage on changes
+  // Restore saved localStorage state on client mount after initial hydration
   React.useEffect(() => {
-    if (parseResult) {
+    setIsMounted(true);
+    try {
+      const savedParse = localStorage.getItem('whatsapp_agent_csv_parse_result');
+      if (savedParse) {
+        const parsed = JSON.parse(savedParse);
+        if (parsed && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
+          setParseResult(parsed);
+        }
+      }
+      const savedVars = localStorage.getItem('whatsapp_agent_variations');
+      if (savedVars) {
+        const parsedVars = JSON.parse(savedVars);
+        if (Array.isArray(parsedVars) && parsedVars.length > 0) {
+          setVariations(parsedVars);
+        }
+      }
+      const savedDelays = localStorage.getItem('whatsapp_agent_delay_settings');
+      if (savedDelays) {
+        setDelaySettings(JSON.parse(savedDelays));
+      }
+    } catch (e) {}
+  }, []);
+
+  // Save to localStorage on changes after mount
+  React.useEffect(() => {
+    if (isMounted && parseResult) {
       try {
         localStorage.setItem('whatsapp_agent_csv_parse_result', JSON.stringify(parseResult));
       } catch (e) {}
     }
-  }, [parseResult]);
+  }, [isMounted, parseResult]);
 
   React.useEffect(() => {
-    if (variations.length > 0) {
+    if (isMounted && variations.length > 0) {
       try {
         localStorage.setItem('whatsapp_agent_variations', JSON.stringify(variations));
       } catch (e) {}
     }
-  }, [variations]);
+  }, [isMounted, variations]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('whatsapp_agent_delay_settings', JSON.stringify(delaySettings));
-    } catch (e) {}
-  }, [delaySettings]);
+    if (isMounted) {
+      try {
+        localStorage.setItem('whatsapp_agent_delay_settings', JSON.stringify(delaySettings));
+      } catch (e) {}
+    }
+  }, [isMounted, delaySettings]);
 
   const [insertedVarSignal, setInsertedVarSignal] = useState<{
     varName: string;
