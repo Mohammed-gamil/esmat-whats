@@ -10,7 +10,7 @@ import { formatWhatsAppPhone } from './phone-formatter';
  * Robust Regex matching dynamic variables in English, Arabic, numbers, dots, spaces, underscores:
  * Matches: {{name}}, {name}, ${name}, {{اسم_العميل}}, {النتيجة}, {1}, {2}, etc.
  */
-const VARIABLE_REGEX = /(?:\$\{?|\{\{?)\s*([^{}\r\n]+?)\s*(?:\}\}?|\}?)/g;
+const VARIABLE_REGEX = /(?:\$?\{\{|\$?\{)\s*([^{}\r\n]+?)\s*(?:\}\}|\})/g;
 
 /**
  * Sanitizes variable key for matching (lowercasing, trimming spaces, normalizing Unicode).
