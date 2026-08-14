@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
       inviteCode,
       participants,
       description,
+      imageUrl,
+      caption,
     } = body;
 
     const rawUrl = process.env.OPENWA_GATEWAY_URL || process.env.OPENWA_URL || "http://localhost:2785";
@@ -183,6 +185,71 @@ export async function POST(req: NextRequest) {
         const res = await axios.post(
           `${targetUrl}/sessions/${encodeURIComponent(activeSessionId)}/messages/send-text`,
           { chatId: formattedChatId, text },
+          { headers, timeout: HTTP_TIMEOUT }
+        );
+
+        return NextResponse.json({ success: true, result: res.data });
+      }
+
+      if (action === "send-image") {
+        const rawChatId = String(body.chatId || "").trim();
+        const imgUrl = String(body.imageUrl || "").trim();
+        const imgCaption = String(body.caption || "").trim();
+
+        if (!rawChatId || !imgUrl) {
+          return NextResponse.json(
+            { success: false, error: "Missing required chatId or imageUrl payload" },
+            { status: 400 }
+          );
+        }
+
+        // Resolve active/ready session ID from OpenWA Gateway
+        const imgListRes = await axios.get(`${targetUrl}/sessions`, { headers, timeout: 10000 }).catch(() => null);
+        let imgActiveSessionId = id;
+
+        if (!imgActiveSessionId && Array.isArray(imgListRes?.data) && imgListRes.data.length > 0) {
+          const readySess = imgListRes.data.find((s: any) => {
+            const st = (s.status || "").toLowerCase();
+            return st === "ready" || st === "working" || st === "connected" || st === "authenticated";
+          });
+          imgActiveSessionId = readySess?.id || imgListRes.data[0]?.id;
+        }
+
+        if (!imgActiveSessionId) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: "No active WhatsApp session connected. Please connect a WhatsApp session first.",
+            },
+            { status: 400 }
+          );
+        }
+
+        // Format phone with +20 Egypt / country code auto-prefix
+        let imgFormattedChatId = rawChatId;
+        if (!rawChatId.endsWith("@g.us") && !rawChatId.endsWith("@lid")) {
+          const cleanPhone = formatWhatsAppPhone(rawChatId, defaultCountryCode || "20");
+          imgFormattedChatId = `${cleanPhone}@c.us`;
+        }
+
+        // Humanization: simulate typing presence before sending image
+        if (simulateTyping) {
+          const typingMs = Math.min(Math.max((imgCaption.length || 10) * 40, 1500), 5000);
+          await new Promise((resolve) => setTimeout(resolve, typingMs));
+        }
+
+        // OpenWA send-image endpoint: accepts { chatId, image: { url }, caption }
+        const sendPayload: any = {
+          chatId: imgFormattedChatId,
+          image: { url: imgUrl },
+        };
+        if (imgCaption) {
+          sendPayload.caption = imgCaption;
+        }
+
+        const res = await axios.post(
+          `${targetUrl}/sessions/${encodeURIComponent(imgActiveSessionId)}/messages/send-image`,
+          sendPayload,
           { headers, timeout: HTTP_TIMEOUT }
         );
 

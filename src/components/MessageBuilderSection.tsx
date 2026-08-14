@@ -13,6 +13,8 @@ import {
   Hash,
   Layers,
   Info,
+  ImagePlus,
+  X,
 } from 'lucide-react';
 import { MessageVariation, CsvParseResult, CsvRow } from '@/types/automation';
 import {
@@ -95,6 +97,21 @@ export function MessageBuilderSection({
       textarea.focus();
       textarea.setSelectionRange(start + tag.length, start + tag.length);
     }, 50);
+  };
+
+  const handleImageUrlChange = (url: string) => {
+    const updated = [...variations];
+    if (updated[activeVariationIndex]) {
+      updated[activeVariationIndex] = {
+        ...updated[activeVariationIndex],
+        imageUrl: url || undefined,
+      };
+      onUpdateVariations(updated);
+    }
+  };
+
+  const clearImageUrl = () => {
+    handleImageUrlChange('');
   };
 
   React.useEffect(() => {
@@ -252,6 +269,56 @@ export function MessageBuilderSection({
               <span>Upload a CSV file in Step 1 to auto-detect variable tags like &#123;&#123;name&#125;&#125;.</span>
             </div>
           )}
+
+          {/* Image Attachment (per variation) */}
+          <div className="space-y-2 pt-2 border-t border-white/10">
+            <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <ImagePlus className="w-3.5 h-3.5 text-[#06b6d4]" />
+              <span>Attach Image to This Variation (optional):</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={currentVariation?.imageUrl || ''}
+                onChange={(e) => handleImageUrlChange(e.target.value)}
+                placeholder="Paste image URL (https://...) — supports {{variables}} too"
+                className="flex-1 bg-[#081419] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+              {currentVariation?.imageUrl && (
+                <button
+                  onClick={clearImageUrl}
+                  className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 transition-colors"
+                  title="Remove image"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {currentVariation?.imageUrl && (
+              <div className="flex items-start gap-3 p-2.5 rounded-lg bg-[#06b6d4]/10 border border-[#06b6d4]/25">
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-[#081419] border border-white/10 shrink-0 flex items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={currentVariation.imageUrl}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div className="text-[11px] text-[#06b6d4] space-y-0.5">
+                  <p className="font-semibold">Image will be sent with this variation</p>
+                  <p className="text-white/40 font-mono text-[10px] break-all max-w-[200px] truncate">
+                    {currentVariation.imageUrl}
+                  </p>
+                  <p className="text-white/30 text-[10px]">
+                    Each variation can have a different image. The message text is sent as the image caption.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column: Live Recipient Message Preview */}
@@ -303,11 +370,17 @@ export function MessageBuilderSection({
             )}
 
             {/* Simulated Chat Bubble */}
-            <div className="relative p-4 rounded-2xl bg-[#10b981]/10 border border-[#10b981]/30 text-slate-100 text-xs leading-relaxed space-y-2 shadow-lg h-[160px] overflow-y-auto scrollbar-thin">
+            <div className="relative p-4 rounded-2xl bg-[#10b981]/10 border border-[#10b981]/30 text-slate-100 text-xs leading-relaxed space-y-2 shadow-lg h-[200px] overflow-y-auto scrollbar-thin">
               <div className="flex items-center justify-between text-[10px] text-[#10b981] font-mono border-b border-[#10b981]/20 pb-1.5">
                 <span className="font-semibold">{currentVariation?.title}</span>
-                <span>Rendered Message</span>
+                <span>{currentVariation?.imageUrl ? '📷 Image + Text' : 'Rendered Message'}</span>
               </div>
+              {currentVariation?.imageUrl && (
+                <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-[#06b6d4]/10 border border-[#06b6d4]/20 text-[10px] text-[#06b6d4]">
+                  <ImagePlus className="w-3.5 h-3.5 shrink-0" />
+                  <span className="font-mono truncate">Image attached — sent with caption below</span>
+                </div>
+              )}
               <p className="whitespace-pre-wrap font-sans">{renderedPreviewText}</p>
             </div>
           </div>

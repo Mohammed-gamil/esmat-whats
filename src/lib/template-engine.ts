@@ -159,6 +159,11 @@ export function buildRecipientQueue(
     // Render message text specifically for this recipient row (Arabic + English dynamic variables)
     const resolvedMessage = renderMessageTemplate(assignedVariation.content, row);
 
+    // Resolve image URL if the variation has one (also interpolate variables in it)
+    const resolvedImageUrl = assignedVariation.imageUrl
+      ? renderMessageTemplate(assignedVariation.imageUrl, row)
+      : undefined;
+
     return {
       id: `queue_${index + 1}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       recipientId: row.__id,
@@ -166,6 +171,7 @@ export function buildRecipientQueue(
       rowData: row,
       assignedVariation,
       resolvedMessage,
+      imageUrl: resolvedImageUrl || undefined,
       status: 'queued',
     };
   });

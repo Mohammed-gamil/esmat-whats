@@ -14,6 +14,7 @@ export interface QueuedSend {
   outreachId: string;
   chatId: string;
   text: string;
+  imageUrl?: string; // Optional image URL to send via OpenWA send-image
   kind: "hook" | "reply";
   createdAt: number;
   attempts: number;
@@ -115,7 +116,12 @@ async function processItem(item: QueuedSend): Promise<boolean> {
   const delayMs = await computeDelayMs(item.chatId, settings.delaySeconds, item.kind);
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-  const sent = await WhatsAppService.sendTextViaGateway(session, item.chatId, item.text);
+  let sent: boolean;
+  if (item.imageUrl && item.imageUrl.trim()) {
+    sent = await WhatsAppService.sendImageViaGateway(session, item.chatId, item.imageUrl.trim(), item.text);
+  } else {
+    sent = await WhatsAppService.sendTextViaGateway(session, item.chatId, item.text);
+  }
   if (!sent) {
     throw new Error("Gateway returned non-success status");
   }
@@ -134,8 +140,8 @@ async function processItem(item: QueuedSend): Promise<boolean> {
           outreachId: item.outreachId,
           direction: "outbound",
           senderJid: "agent",
-          body: item.text,
-          msgType: "text",
+          body: item.imageUrl ? `[Image: ${item.imageUrl}] ${item.text}` : item.text,
+          msgType: item.imageUrl ? "media" : "text",
         },
       });
     }
@@ -151,7 +157,7 @@ async function processItem(item: QueuedSend): Promise<boolean> {
   const senderJid = item.kind === "reply" ? "ai_sales_agent" : "agent";
   await recordChatMessage(
     item.chatId,
-    { direction: "outbound", senderJid, body: item.text, msgType: "text" },
+    { direction: "outbound", senderJid, body: item.imageUrl ? `[Image: ${item.imageUrl}] ${item.text}` : item.text, msgType: item.imageUrl ? "media" : "text" },
     {
       recipientName: outreach.recipientName || meta?.recipientName || undefined,
       outreachId: outreach.id,

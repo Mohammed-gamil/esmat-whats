@@ -522,7 +522,7 @@ export function AutomationMonitorSection({
                             {item.recipientContact}
                           </span>
                           <span className="text-[10px] text-white/40 block max-w-[140px] truncate">
-                            {item.resolvedMessage}
+                            {item.imageUrl ? '📷 ' : ''}{item.resolvedMessage}
                           </span>
                         </td>
 

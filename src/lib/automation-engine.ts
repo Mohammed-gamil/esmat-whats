@@ -103,6 +103,51 @@ export async function sendRecipientMessage(
   }
 
   try {
+    // Determine if this message has an image attachment
+    const hasImage = !!(item.imageUrl && item.imageUrl.trim());
+
+    if (hasImage) {
+      // Send the image (with caption = the message text for context)
+      const imageRes = await fetch('/api/whatsapp/sessions-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-image',
+          chatId: `${cleanPhone}@c.us`,
+          imageUrl: item.imageUrl!.trim(),
+          caption: item.resolvedMessage || '',
+          simulateTyping: simulateTyping,
+          defaultCountryCode: defaultCountryCode,
+        }),
+      });
+
+      const imageData = await imageRes.json().catch(() => ({}));
+
+      if (!imageRes.ok || !imageData.success) {
+        // Fallback: if image send fails, try sending as plain text instead
+        console.warn('[automation-engine] Image send failed, falling back to text-only:', imageData.error);
+        const textRes = await fetch('/api/whatsapp/sessions-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'send-text',
+            chatId: `${cleanPhone}@c.us`,
+            text: item.resolvedMessage,
+            simulateTyping: simulateTyping,
+            defaultCountryCode: defaultCountryCode,
+          }),
+        });
+        const textData = await textRes.json().catch(() => ({}));
+        if (textRes.ok && textData.success) {
+          return { success: true };
+        }
+        return { success: false, error: imageData.error || textData.error || 'Image and text fallback both failed' };
+      }
+
+      return { success: true };
+    }
+
+    // No image — standard text-only send
     const res = await fetch('/api/whatsapp/sessions-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -183,6 +183,54 @@ export class WhatsAppService {
     }
   }
 
+  static async sendImageViaGateway(
+    session: { sessionId: string },
+    chatId: string,
+    imageUrl: string,
+    caption?: string
+  ): Promise<boolean> {
+    const settings = await this.getSettings();
+    const apiKey = this.getOpenWaApiKey(settings.apiKey);
+    const headers = this.getHeaders(apiKey);
+    const sessionUuid = await this.resolveSessionUuid(session.sessionId, settings.gatewayUrl, headers);
+
+    const targetChatId = await this.resolveCanonicalChatId(sessionUuid, chatId, settings.gatewayUrl, headers);
+
+    // Humanization: add randomized typing simulation delay before image send
+    const typingMs = Math.min(Math.max((caption?.length || 10) * 40, 1500), 5000);
+    await new Promise((resolve) => setTimeout(resolve, typingMs));
+
+    try {
+      const sendPayload: any = {
+        chatId: targetChatId,
+        image: { url: imageUrl },
+      };
+      if (caption && caption.trim()) {
+        sendPayload.caption = caption.trim();
+      }
+
+      const res = await axios.post(
+        `${settings.gatewayUrl}/api/sessions/${sessionUuid}/messages/send-image`,
+        sendPayload,
+        { headers, timeout: 30000 }
+      );
+      if (!res.data || res.status >= 400) {
+        throw new Error(`OpenWA send-image failed (${res.status})`);
+      }
+      return true;
+    } catch (err: any) {
+      const detail = err.response?.data?.message || err.message;
+      const statusCode = err.response?.status || 400;
+      console.warn(`[WhatsAppService] send-image failed (${statusCode}): ${Array.isArray(detail) ? detail.join(', ') : detail}`);
+      // Fallback to text-only if image send fails
+      if (caption && caption.trim()) {
+        console.log(`[WhatsAppService] Falling back to text-only for ${chatId}`);
+        return this.sendTextViaGateway(session, chatId, caption);
+      }
+      throw new Error(`OpenWA send-image failed (${statusCode}): ${Array.isArray(detail) ? detail.join(', ') : detail}`);
+    }
+  }
+
   static async resolveCanonicalChatId(
     sessionUuid: string,
     chatId: string,

@@ -31,6 +31,7 @@ export interface MessageVariation {
   id: string;
   title: string;
   content: string;
+  imageUrl?: string; // Optional image URL per variation (sent via OpenWA send-image)
 }
 
 export interface VariableValidationResult {
@@ -62,6 +63,7 @@ export interface RecipientQueueItem {
   rowData: CsvRow;
   assignedVariation: MessageVariation;
   resolvedMessage: string;
+  imageUrl?: string; // Resolved image URL from the assigned variation
   status: 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
   sentAt?: string;
   error?: string;
