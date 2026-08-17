@@ -89,17 +89,27 @@ describe('Multiple Variations & Distribution Rules', () => {
   });
 });
 
-describe('Delay Control Minimum Rule Enforcement', () => {
-  it('should enforce a minimum delay of 1 minute (60s)', () => {
-    const invalidDelay = validateAndSanitizeDelay(0.5);
+describe('Delay Control Rule Enforcement', () => {
+  it('should enforce a safety minimum delay of 5 seconds', () => {
+    const invalidDelay = validateAndSanitizeDelay(2);
     expect(invalidDelay.isValid).toBe(false);
-    expect(invalidDelay.sanitizedMinutes).toBe(1);
-    expect(invalidDelay.totalSeconds).toBe(60);
+    expect(invalidDelay.sanitizedSeconds).toBe(5);
+    expect(invalidDelay.totalSeconds).toBe(5);
 
-    const validDelay = validateAndSanitizeDelay(3);
-    expect(validDelay.isValid).toBe(true);
-    expect(validDelay.sanitizedMinutes).toBe(3);
-    expect(validDelay.totalSeconds).toBe(180);
+    const validFastDelay = validateAndSanitizeDelay(10);
+    expect(validFastDelay.isValid).toBe(true);
+    expect(validFastDelay.sanitizedSeconds).toBe(10);
+    expect(validFastDelay.totalSeconds).toBe(10);
+
+    const valid30sDelay = validateAndSanitizeDelay(30);
+    expect(valid30sDelay.isValid).toBe(true);
+    expect(valid30sDelay.sanitizedSeconds).toBe(30);
+    expect(valid30sDelay.totalSeconds).toBe(30);
+
+    const validMinuteDelay = validateAndSanitizeDelay(3, true); // 3 minutes
+    expect(validMinuteDelay.isValid).toBe(true);
+    expect(validMinuteDelay.sanitizedMinutes).toBe(3);
+    expect(validMinuteDelay.totalSeconds).toBe(180);
   });
 });
 
