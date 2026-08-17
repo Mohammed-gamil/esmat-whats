@@ -42,8 +42,9 @@ export function CsvAutomationAgent() {
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(initialParse);
   const [variations, setVariations] = useState<MessageVariation[]>(DEFAULT_VARIATIONS);
   const [delaySettings, setDelaySettings] = useState<DelaySettings>({
-    delayMinutes: 1,
-    customSeconds: 60,
+    delaySeconds: 30,
+    delayMinutes: 0.5,
+    customSeconds: 30,
   });
   const [isMounted, setIsMounted] = useState(false);
 
@@ -67,7 +68,15 @@ export function CsvAutomationAgent() {
       }
       const savedDelays = localStorage.getItem('whatsapp_agent_delay_settings');
       if (savedDelays) {
-        setDelaySettings(JSON.parse(savedDelays));
+        const parsedDelays = JSON.parse(savedDelays);
+        const totalSec =
+          parsedDelays.delaySeconds ||
+          (parsedDelays.delayMinutes ? Math.round(parsedDelays.delayMinutes * 60) : 30);
+        setDelaySettings({
+          delaySeconds: totalSec,
+          delayMinutes: Math.round((totalSec / 60) * 100) / 100,
+          customSeconds: totalSec,
+        });
       }
     } catch (e) {}
   }, []);
@@ -181,7 +190,9 @@ export function CsvAutomationAgent() {
               Pacing Delay
             </span>
             <span className="text-xl font-bold font-mono text-white mt-0.5 block">
-              {delaySettings.delayMinutes} Min(s)
+              {(delaySettings.delaySeconds || (delaySettings.delayMinutes ? delaySettings.delayMinutes * 60 : 30)) < 60
+                ? `${delaySettings.delaySeconds || 30}s`
+                : `${(delaySettings.delaySeconds || (delaySettings.delayMinutes ? delaySettings.delayMinutes * 60 : 60)) / 60}m`}
             </span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-[#f05a28]/15 border border-[#f05a28]/30 flex items-center justify-center text-[#ff8c5a]">

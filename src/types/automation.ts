@@ -52,8 +52,9 @@ export interface SavedTemplate {
 }
 
 export interface DelaySettings {
-  delayMinutes: number; // Minimum 1 minute
-  customSeconds?: number; // Calculated total seconds (minimum 60s)
+  delaySeconds: number; // Delay in seconds between messages (e.g. 10, 20, 30, 60, etc.)
+  delayMinutes?: number; // Delay in minutes (for legacy compatibility)
+  customSeconds?: number; // Total seconds
 }
 
 export interface RecipientQueueItem {

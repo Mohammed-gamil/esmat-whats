@@ -6,26 +6,37 @@ import {
 import { formatWhatsAppPhone } from './phone-formatter';
 
 /**
- * Enforces the strict rule that delay cannot be lower than 1 minute (60 seconds).
+ * Validates and sanitizes delay setting (in seconds or minutes).
+ * Minimum delay allowed is 5 seconds to prevent rate-limit flooding while giving full flexibility (10s, 20s, 30s, etc.).
  */
-export function validateAndSanitizeDelay(delayMinutes: number): {
+export function validateAndSanitizeDelay(
+  delay: number,
+  isMinutes: boolean = false
+): {
+  sanitizedSeconds: number;
   sanitizedMinutes: number;
   totalSeconds: number;
   isValid: boolean;
   warning?: string;
 } {
-  if (isNaN(delayMinutes) || delayMinutes < 1) {
+  const MIN_DELAY_SECONDS = 5;
+  const rawSeconds = isMinutes ? delay * 60 : delay;
+
+  if (isNaN(rawSeconds) || rawSeconds < MIN_DELAY_SECONDS) {
     return {
-      sanitizedMinutes: 1,
-      totalSeconds: 60,
+      sanitizedSeconds: MIN_DELAY_SECONDS,
+      sanitizedMinutes: Math.round((MIN_DELAY_SECONDS / 60) * 100) / 100,
+      totalSeconds: MIN_DELAY_SECONDS,
       isValid: false,
-      warning: 'Minimum delay must be at least 1 minute. Delay has been automatically set to 1 minute.',
+      warning: `Minimum delay must be at least ${MIN_DELAY_SECONDS} seconds for delivery safety. Delay set to ${MIN_DELAY_SECONDS}s.`,
     };
   }
 
+  const roundedSeconds = Math.round(rawSeconds);
   return {
-    sanitizedMinutes: delayMinutes,
-    totalSeconds: Math.round(delayMinutes * 60),
+    sanitizedSeconds: roundedSeconds,
+    sanitizedMinutes: Math.round((roundedSeconds / 60) * 100) / 100,
+    totalSeconds: roundedSeconds,
     isValid: true,
   };
 }

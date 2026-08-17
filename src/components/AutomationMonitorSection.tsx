@@ -9,6 +9,15 @@ import {
   Download,
   Square,
   Activity,
+  RotateCcw,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Filter,
+  RefreshCw,
+  Server,
+  Cloud,
+  Check,
 } from 'lucide-react';
 import {
   AutomationExecutionState,
@@ -18,20 +27,16 @@ import {
   RecipientQueueItem,
   CsvParseResult,
 } from '@/types/automation';
-import {
-  buildRecipientQueue,
-} from '@/lib/template-engine';
-import {
-  addExecutionLog,
-  createInitialExecutionState,
-  sendRecipientMessage,
-} from '@/lib/automation-engine';
+import { buildRecipientQueue } from '@/lib/template-engine';
+import { addExecutionLog, createInitialExecutionState } from '@/lib/automation-engine';
 
 interface AutomationMonitorSectionProps {
   parseResult: CsvParseResult | null;
   variations: MessageVariation[];
   delaySettings: DelaySettings;
 }
+
+type QueueFilter = 'all' | 'sent' | 'failed' | 'queued';
 
 export function AutomationMonitorSection({
   parseResult,
@@ -49,30 +54,99 @@ export function AutomationMonitorSection({
     logs: [],
   });
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [activeFilter, setActiveFilter] = useState<QueueFilter>('all');
+  const [retryingSingleId, setRetryingSingleId] = useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
+  const [serverSynced, setServerSynced] = useState<boolean>(false);
+
   const terminalContainerRef = useRef<HTMLDivElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const recipientColumn = parseResult?.recipientColumn || 'phone';
   const rows = parseResult?.rows || [];
 
-  // Initialize queue state only when CSV rows or recipient column changes, avoiding re-initialization on typing
-  useEffect(() => {
-    if (executionState.status === 'idle' && rows.length > 0) {
-      const queue = buildRecipientQueue(rows, recipientColumn, variations);
-      const initialState = createInitialExecutionState(queue);
-      setExecutionState(initialState);
+  // Get active delay in seconds
+  const getDelaySeconds = (): number => {
+    if (delaySettings.delaySeconds && delaySettings.delaySeconds > 0) {
+      return delaySettings.delaySeconds;
     }
-  }, [rows, recipientColumn]);
+    if (delaySettings.delayMinutes && delaySettings.delayMinutes > 0) {
+      return Math.round(delaySettings.delayMinutes * 60);
+    }
+    return 30;
+  };
 
-  // Scroll ONLY the internal log terminal box when running (never scroll the entire window/page)
+  const formatSeconds = (sec: number): string => {
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  };
+
+  // Sync state from server on mount
+  useEffect(() => {
+    const fetchServerState = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/automation-runner');
+        const data = await res.json().catch(() => ({}));
+        if (data.success && data.state && data.state.queue && data.state.queue.length > 0) {
+          setExecutionState(data.state);
+          setServerSynced(true);
+        } else if (rows.length > 0) {
+          const queue = buildRecipientQueue(rows, recipientColumn, variations);
+          const initial = createInitialExecutionState(queue);
+          setExecutionState(initial);
+        }
+      } catch (e) {
+        if (rows.length > 0) {
+          const queue = buildRecipientQueue(rows, recipientColumn, variations);
+          setExecutionState(createInitialExecutionState(queue));
+        }
+      }
+    };
+
+    fetchServerState();
+  }, [rows.length, recipientColumn]);
+
+  // Polling loop: continuously sync state from server whenever running
+  useEffect(() => {
+    if (executionState.status === 'running') {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const res = await fetch('/api/whatsapp/automation-runner');
+          const data = await res.json().catch(() => ({}));
+          if (data.success && data.state) {
+            setExecutionState(data.state);
+          }
+        } catch (e) {
+          console.warn('[AutomationMonitor] polling error:', e);
+        }
+      }, 1200);
+    } else {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [executionState.status]);
+
+  // Scroll internal log terminal box when new logs arrive while running
   useEffect(() => {
     if (executionState.status === 'running' && terminalContainerRef.current) {
       terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
     }
-  }, [executionState.logs, executionState.status]);
+  }, [executionState.logs.length, executionState.status]);
 
-  const handleStartAutomation = () => {
+  /**
+   * Start bulk automation in server background.
+   */
+  const handleStartAutomation = async () => {
     if (rows.length === 0) {
       alert('Please upload a CSV file with valid recipient rows first.');
       return;
@@ -83,252 +157,173 @@ export function AutomationMonitorSection({
     }
 
     const queue = buildRecipientQueue(rows, recipientColumn, variations);
-    const totalSec = delaySettings.delayMinutes * 60;
+    const delaySec = getDelaySeconds();
+    setIsActionLoading(true);
 
-    let initialLogs: ExecutionLog[] = [
-      {
-        id: `log_start_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: 'info',
-        message: `🚀 Automation session started for ${queue.length} recipient(s). Inter-message delay set to ${delaySettings.delayMinutes} minute(s) (${totalSec}s).`,
-      },
-    ];
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          queue,
+          delaySettings: {
+            delaySeconds: delaySec,
+            delayMinutes: Math.round((delaySec / 60) * 100) / 100,
+            customSeconds: delaySec,
+          },
+          defaultCountryCode: '20',
+          simulateTyping: true,
+        }),
+      });
 
-    setExecutionState({
-      status: 'running',
-      currentIndex: 0,
-      totalRecipients: queue.length,
-      sentCount: 0,
-      failedCount: 0,
-      remainingSecondsForNext: 0,
-      queue,
-      logs: initialLogs,
-      startedAt: new Date().toISOString(),
-    });
-
-    executeStep(0, queue, initialLogs, delaySettings.delayMinutes * 60);
-  };
-
-  const handlePauseAutomation = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
-    setExecutionState((prev) => ({
-      ...prev,
-      status: 'paused',
-      logs: addExecutionLog(
-        prev.logs,
-        'warning',
-        '⏸️ Automation paused by user. Timer halted.'
-      ),
-    }));
-  };
-
-  const handleResumeAutomation = () => {
-    setExecutionState((prev) => {
-      const nextLogs = addExecutionLog(
-        prev.logs,
-        'info',
-        '▶️ Automation resumed. Continuing batch queue execution...'
-      );
-      setTimeout(() => {
-        executeStep(
-          prev.currentIndex,
-          prev.queue,
-          nextLogs,
-          prev.remainingSecondsForNext > 0
-            ? prev.remainingSecondsForNext
-            : delaySettings.delayMinutes * 60
-        );
-      }, 100);
-
-      return {
-        ...prev,
-        status: 'running',
-        logs: nextLogs,
-      };
-    });
-  };
-
-  const handleStopAutomation = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
-    const queue = buildRecipientQueue(rows, recipientColumn, variations);
-    const resetState = createInitialExecutionState(queue);
-
-    setExecutionState({
-      ...resetState,
-      logs: addExecutionLog(
-        resetState.logs,
-        'warning',
-        '⏹️ Automation stopped and queue reset to idle.'
-      ),
-    });
-  };
-
-  const executeStep = async (
-    index: number,
-    currentQueue: RecipientQueueItem[],
-    currentLogs: ExecutionLog[],
-    delaySeconds: number
-  ) => {
-    if (index >= currentQueue.length) {
-      setExecutionState((prev) => ({
-        ...prev,
-        status: 'completed',
-        remainingSecondsForNext: 0,
-        completedAt: new Date().toISOString(),
-        logs: addExecutionLog(
-          prev.logs,
-          'success',
-          `🎉 Bulk message automation completed! Sent: ${prev.sentCount}, Failed: ${prev.failedCount}.`
-        ),
-      }));
-      return;
-    }
-
-    const currentItem = currentQueue[index];
-
-    setExecutionState((prev) => {
-      const updatedQueue = [...prev.queue];
-      updatedQueue[index] = { ...updatedQueue[index], status: 'sending' };
-      return {
-        ...prev,
-        currentIndex: index,
-        queue: updatedQueue,
-        logs: addExecutionLog(
-          prev.logs,
-          'step',
-          `[DISPATCH] Processing Recipient #${index + 1}/${currentQueue.length} (${currentItem.recipientContact}) with "${currentItem.assignedVariation.title}"`,
-          currentItem.recipientContact,
-          currentItem.assignedVariation.title
-        ),
-      };
-    });
-
-    const res = await sendRecipientMessage(currentItem);
-
-    setExecutionState((prev) => {
-      const updatedQueue = [...prev.queue];
-      const nowIso = new Date().toISOString();
-
-      if (res.success) {
-        updatedQueue[index] = {
-          ...updatedQueue[index],
-          status: 'sent',
-          sentAt: nowIso,
-        };
-        const newSentCount = prev.sentCount + 1;
-        const newLogs = addExecutionLog(
-          prev.logs,
-          'success',
-          `[SENT] Delivered to ${currentItem.recipientContact} successfully!`,
-          currentItem.recipientContact
-        );
-
-        if (index + 1 >= currentQueue.length) {
-          return {
-            ...prev,
-            status: 'completed',
-            sentCount: newSentCount,
-            queue: updatedQueue,
-            logs: addExecutionLog(
-              newLogs,
-              'success',
-              `🎉 All ${currentQueue.length} recipient messages dispatched successfully!`
-            ),
-          };
-        }
-
-        startCountdownAndScheduleNext(index + 1, updatedQueue, newLogs, delaySeconds);
-
-        return {
-          ...prev,
-          sentCount: newSentCount,
-          queue: updatedQueue,
-          logs: newLogs,
-        };
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
       } else {
-        updatedQueue[index] = {
-          ...updatedQueue[index],
-          status: 'failed',
-          error: res.error || 'Send failed',
-        };
-        const newFailedCount = prev.failedCount + 1;
-        const newLogs = addExecutionLog(
-          prev.logs,
-          'error',
-          `[FAILED] Delivery to ${currentItem.recipientContact} failed: ${res.error}`,
-          currentItem.recipientContact
-        );
-
-        if (index + 1 >= currentQueue.length) {
-          return {
-            ...prev,
-            status: 'completed',
-            failedCount: newFailedCount,
-            queue: updatedQueue,
-            logs: newLogs,
-          };
-        }
-
-        startCountdownAndScheduleNext(index + 1, updatedQueue, newLogs, delaySeconds);
-
-        return {
-          ...prev,
-          failedCount: newFailedCount,
-          queue: updatedQueue,
-          logs: newLogs,
-        };
+        alert(data.error || 'Failed to start background automation');
       }
-    });
+    } catch (e: any) {
+      alert('Network error starting background automation: ' + (e.message || String(e)));
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
-  const startCountdownAndScheduleNext = (
-    nextIndex: number,
-    queue: RecipientQueueItem[],
-    logs: ExecutionLog[],
-    totalDelaySeconds: number
-  ) => {
-    let remaining = totalDelaySeconds;
-
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
-    setExecutionState((prev) => ({
-      ...prev,
-      remainingSecondsForNext: remaining,
-      logs: addExecutionLog(
-        prev.logs,
-        'info',
-        `⏳ Pacing Delay Active: Waiting ${Math.floor(remaining / 60)}m ${remaining % 60}s before sending next message...`
-      ),
-    }));
-
-    countdownIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      setExecutionState((prev) => ({
-        ...prev,
-        remainingSecondsForNext: Math.max(0, remaining),
-      }));
-
-      if (remaining <= 0) {
-        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-        executeStep(nextIndex, queue, logs, totalDelaySeconds);
+  /**
+   * Pause background automation.
+   */
+  const handlePauseAutomation = async () => {
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pause' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
       }
-    }, 1000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
+  /**
+   * Resume paused background automation.
+   */
+  const handleResumeAutomation = async () => {
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resume' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  /**
+   * Stop background automation.
+   */
+  const handleStopAutomation = async () => {
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  /**
+   * Resend / Retry ALL failed recipient numbers on server.
+   */
+  const handleRetryFailedMessages = async () => {
+    const delaySec = getDelaySeconds();
+    setIsActionLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'retry-failed',
+          delaySettings: {
+            delaySeconds: delaySec,
+            delayMinutes: Math.round((delaySec / 60) * 100) / 100,
+            customSeconds: delaySec,
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
+      } else {
+        alert(data.error || 'Failed to retry messages');
+      }
+    } catch (e: any) {
+      alert('Error retrying failed messages: ' + (e.message || String(e)));
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  /**
+   * Retry single failed recipient on server.
+   */
+  const handleRetrySingle = async (recipientId: string) => {
+    setRetryingSingleId(recipientId);
+    try {
+      const res = await fetch('/api/whatsapp/automation-runner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'retry-single', recipientId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.state) {
+        setExecutionState(data.state);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRetryingSingleId(null);
+    }
+  };
+
+  /**
+   * Export full CSV report.
+   */
   const handleExportLog = () => {
     if (executionState.queue.length === 0) return;
     const csvLines = [
-      'Recipient ID,Recipient Contact,Variation Assigned,Status,Sent At,Message Content',
+      'Recipient ID,Recipient Contact,Variation Assigned,Status,Sent At,Error Reason,Message Content',
     ];
 
     executionState.queue.forEach((q) => {
       const cleanMsg = `"${q.resolvedMessage.replace(/"/g, '""')}"`;
+      const cleanErr = `"${(q.error || '').replace(/"/g, '""')}"`;
       csvLines.push(
-        `"${q.recipientId}","${q.recipientContact}","${q.assignedVariation.title}","${q.status}","${q.sentAt || ''}",${cleanMsg}`
+        `"${q.recipientId}","${q.recipientContact}","${q.assignedVariation.title}","${q.status}","${q.sentAt || ''}",${cleanErr},${cleanMsg}`
       );
     });
 
@@ -342,14 +337,50 @@ export function AutomationMonitorSection({
     document.body.removeChild(link);
   };
 
+  /**
+   * Export only failed numbers CSV.
+   */
+  const handleExportFailedCsv = () => {
+    const failedItems = executionState.queue.filter((q) => q.status === 'failed');
+    if (failedItems.length === 0) {
+      alert('No failed recipients to export.');
+      return;
+    }
+
+    const csvLines = ['Recipient Contact,Error Reason,Assigned Variation,Message Content'];
+    failedItems.forEach((q) => {
+      const cleanMsg = `"${q.resolvedMessage.replace(/"/g, '""')}"`;
+      const cleanErr = `"${(q.error || '').replace(/"/g, '""')}"`;
+      csvLines.push(`"${q.recipientContact}",${cleanErr},"${q.assignedVariation.title}",${cleanMsg}`);
+    });
+
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `failed_recipients_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtered queue items
+  const filteredQueue = executionState.queue.filter((item) => {
+    if (activeFilter === 'sent') return item.status === 'sent';
+    if (activeFilter === 'failed') return item.status === 'failed';
+    if (activeFilter === 'queued') return item.status === 'queued' || item.status === 'sending';
+    return true;
+  });
+
+  const totalCount = executionState.totalRecipients || executionState.queue.length;
+  const sentCount = executionState.queue.filter((q) => q.status === 'sent').length;
+  const failedCount = executionState.queue.filter((q) => q.status === 'failed').length;
+  const queuedCount = executionState.queue.filter((q) => q.status === 'queued' || q.status === 'sending').length;
+
   const progressPercent =
-    executionState.totalRecipients > 0
-      ? Math.round(
-          ((executionState.sentCount + executionState.failedCount) /
-            executionState.totalRecipients) *
-            100
-        )
-      : 0;
+    totalCount > 0 ? Math.round(((sentCount + failedCount) / totalCount) * 100) : 0;
+
+  const currentDelaySec = getDelaySeconds();
 
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-2xl space-y-6">
@@ -360,12 +391,14 @@ export function AutomationMonitorSection({
             <Activity className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>Step 5: Automation Monitor & Live Queue</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>Step 5: Automation Monitor & Live Queue</span>
+              </h2>
               <span
-                className={`px-2 py-0.5 rounded-full text-xs font-mono border ${
+                className={`px-2.5 py-0.5 rounded-full text-xs font-mono border font-semibold ${
                   executionState.status === 'running'
-                    ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40 animate-pulse font-semibold'
+                    ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40 animate-pulse'
                     : executionState.status === 'paused'
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                     : executionState.status === 'completed'
@@ -375,28 +408,56 @@ export function AutomationMonitorSection({
               >
                 Status: {executionState.status.toUpperCase()}
               </span>
-            </h2>
-            <p className="text-xs text-white/50">
-              Run deterministic rule-based automation with live status monitoring, pacing countdown, and execution terminal logs.
+
+              {/* Background Server Execution Badge */}
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono flex items-center gap-1">
+                <Server className="w-3 h-3 text-cyan-400" />
+                <span>24/7 Server Background Job</span>
+              </span>
+            </div>
+            <p className="text-xs text-white/50 mt-0.5">
+              Runs persistently on the server. You can safely close your browser or navigate away anytime.
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
-          {executionState.status === 'idle' || executionState.status === 'completed' ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Resend to Failed Numbers button (prominent if there are failed items) */}
+          {failedCount > 0 && executionState.status !== 'running' && (
+            <button
+              onClick={handleRetryFailedMessages}
+              disabled={isActionLoading}
+              className="px-4 py-2.5 text-xs font-bold rounded-xl bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/25 transition-all flex items-center gap-2 cursor-pointer animate-pulse disabled:opacity-50"
+              title="Resend messages to all failed numbers in background"
+            >
+              {isActionLoading ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <RotateCcw className="w-4 h-4" />
+              )}
+              <span>Resend to Failed ({failedCount})</span>
+            </button>
+          )}
+
+          {executionState.status === 'idle' || executionState.status === 'completed' || executionState.status === 'stopped' ? (
             <button
               onClick={handleStartAutomation}
-              disabled={rows.length === 0}
-              className="px-5 py-2.5 text-xs font-bold rounded-xl bg-brand-gradient hover:opacity-90 text-white shadow-brand-glow transition-all flex items-center gap-2 disabled:opacity-40"
+              disabled={isActionLoading || rows.length === 0}
+              className="px-5 py-2.5 text-xs font-bold rounded-xl bg-brand-gradient hover:opacity-90 text-white shadow-brand-glow transition-all flex items-center gap-2 disabled:opacity-40 cursor-pointer"
             >
-              <Play className="w-4 h-4 fill-white" />
-              <span>Start Bulk Automation</span>
+              {isActionLoading ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 fill-white" />
+              )}
+              <span>Start Background Automation</span>
             </button>
           ) : executionState.status === 'running' ? (
             <button
               onClick={handlePauseAutomation}
-              className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition-all flex items-center gap-2"
+              disabled={isActionLoading}
+              className="px-4 py-2.5 text-xs font-bold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Pause className="w-4 h-4 fill-amber-300" />
               <span>Pause</span>
@@ -404,7 +465,8 @@ export function AutomationMonitorSection({
           ) : (
             <button
               onClick={handleResumeAutomation}
-              className="px-4 py-2 text-xs font-bold rounded-xl bg-[#10b981] hover:bg-[#10b981]/90 text-[#081419] font-bold transition-all flex items-center gap-2"
+              disabled={isActionLoading}
+              className="px-4 py-2.5 text-xs font-bold rounded-xl bg-[#10b981] hover:bg-[#10b981]/90 text-[#081419] font-bold transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Play className="w-4 h-4 fill-[#081419]" />
               <span>Resume Execution</span>
@@ -414,10 +476,11 @@ export function AutomationMonitorSection({
           {executionState.status !== 'idle' && (
             <button
               onClick={handleStopAutomation}
-              className="px-3 py-2 text-xs font-semibold rounded-xl bg-[#081419] hover:bg-rose-500/20 hover:text-rose-300 border border-white/10 text-slate-200 transition-colors"
+              disabled={isActionLoading}
+              className="px-3.5 py-2.5 text-xs font-semibold rounded-xl bg-[#081419] hover:bg-rose-500/20 hover:text-rose-300 border border-white/10 text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
               title="Stop & Reset Queue"
             >
-              <Square className="w-3.5 h-3.5" />
+              <Square className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -437,10 +500,12 @@ export function AutomationMonitorSection({
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono text-white/50 pt-1">
-            <span>Sent: {executionState.sentCount}</span>
-            <span>Failed: {executionState.failedCount}</span>
-            <span>Total: {executionState.totalRecipients}</span>
+          <div className="flex items-center justify-between text-[11px] font-mono pt-1">
+            <span className="text-emerald-400 font-semibold">✓ Sent: {sentCount}</span>
+            <span className={failedCount > 0 ? 'text-rose-400 font-bold' : 'text-white/50'}>
+              ✗ Failed: {failedCount}
+            </span>
+            <span className="text-white/50">Total: {totalCount}</span>
           </div>
         </div>
 
@@ -449,22 +514,27 @@ export function AutomationMonitorSection({
           <div>
             <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-[#ff8c5a]" />
-              Inter-Message Countdown Timer:
+              <span>Inter-Message Countdown Timer:</span>
             </span>
             <p className="text-xs text-white/50 mt-0.5">
               {executionState.status === 'running' && executionState.remainingSecondsForNext > 0
-                ? 'Pacing active between messages...'
+                ? 'Server pacing active between messages...'
+                : executionState.status === 'running'
+                ? 'Server dispatching message...'
+                : executionState.status === 'paused'
+                ? 'Server execution paused'
                 : 'Waiting for next dispatch step'}
             </p>
           </div>
 
           <div className="text-right">
-            <span className="text-xl font-bold font-mono text-[#ff8c5a]">
-              {Math.floor(executionState.remainingSecondsForNext / 60)}m{' '}
-              {String(executionState.remainingSecondsForNext % 60).padStart(2, '0')}s
+            <span className="text-2xl font-bold font-mono text-[#ff8c5a]">
+              {executionState.remainingSecondsForNext > 0
+                ? formatSeconds(executionState.remainingSecondsForNext)
+                : `${currentDelaySec}s`}
             </span>
             <span className="block text-[10px] text-[#ff8c5a]/80 font-mono">
-              Min 1m delay rule
+              Delay: {formatSeconds(currentDelaySec)}
             </span>
           </div>
         </div>
@@ -472,31 +542,91 @@ export function AutomationMonitorSection({
 
       {/* Recipient Queue Table & Terminal Log 2-Column Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recipient Queue Table */}
+        {/* Recipient Queue Table Column */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white flex items-center gap-2">
-              <span>Recipient Dispatch Queue</span>
-              <span className="px-2 py-0.5 rounded bg-[#0d2530] text-slate-200 text-[10px] font-mono border border-white/10">
-                {executionState.queue.length} Total Items
-              </span>
-            </span>
-
-            {executionState.queue.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1 p-1 bg-[#081419] border border-white/10 rounded-xl text-xs font-mono">
               <button
-                onClick={handleExportLog}
-                className="text-xs text-[#ff8c5a] hover:text-white flex items-center gap-1 font-medium"
+                type="button"
+                onClick={() => setActiveFilter('all')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  activeFilter === 'all'
+                    ? 'bg-brand-gradient text-white font-bold shadow-sm'
+                    : 'text-white/60 hover:text-white'
+                }`}
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Report CSV</span>
+                All ({totalCount})
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => setActiveFilter('sent')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  activeFilter === 'sent'
+                    ? 'bg-emerald-500 text-white font-bold shadow-sm'
+                    : 'text-white/60 hover:text-emerald-400'
+                }`}
+              >
+                Sent ({sentCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilter('failed')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  activeFilter === 'failed'
+                    ? 'bg-rose-500 text-white font-bold shadow-sm'
+                    : failedCount > 0
+                    ? 'text-rose-400 font-bold hover:text-rose-300'
+                    : 'text-white/60 hover:text-rose-400'
+                }`}
+              >
+                Failed ({failedCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilter('queued')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  activeFilter === 'queued'
+                    ? 'bg-cyan-500 text-white font-bold shadow-sm'
+                    : 'text-white/60 hover:text-cyan-400'
+                }`}
+              >
+                Queued ({queuedCount})
+              </button>
+            </div>
+
+            {/* Export Actions */}
+            <div className="flex items-center gap-2">
+              {failedCount > 0 && (
+                <button
+                  onClick={handleExportFailedCsv}
+                  className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 font-medium bg-rose-500/10 px-2 py-1 rounded-lg border border-rose-500/20 cursor-pointer"
+                  title="Export only failed recipients as CSV"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Export Failed</span>
+                </button>
+              )}
+
+              {executionState.queue.length > 0 && (
+                <button
+                  onClick={handleExportLog}
+                  className="text-xs text-[#ff8c5a] hover:text-white flex items-center gap-1 font-medium bg-white/5 px-2 py-1 rounded-lg border border-white/10 cursor-pointer"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Export CSV</span>
+                </button>
+              )}
+            </div>
           </div>
 
+          {/* Queue List Table */}
           <div className="overflow-hidden rounded-xl border border-white/10 bg-[#081419] max-h-[350px] overflow-y-auto scrollbar-thin">
-            {executionState.queue.length === 0 ? (
-              <div className="p-8 text-center text-xs text-white/40">
-                No items in execution queue. Upload a CSV file above to populate.
+            {filteredQueue.length === 0 ? (
+              <div className="p-8 text-center text-xs text-white/40 font-mono">
+                {activeFilter === 'all'
+                  ? 'No items in execution queue. Upload a CSV file above to populate.'
+                  : `No ${activeFilter} recipients in current queue.`}
               </div>
             ) : (
               <table className="w-full text-left text-xs font-mono">
@@ -504,12 +634,16 @@ export function AutomationMonitorSection({
                   <tr>
                     <th className="p-2.5">Target</th>
                     <th className="p-2.5">Variation</th>
-                    <th className="p-2.5 text-right">Status</th>
+                    <th className="p-2.5 text-right">Status / Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-300">
-                  {executionState.queue.map((item, idx) => {
-                    const isCurrent = executionState.currentIndex === idx && executionState.status === 'running';
+                  {filteredQueue.map((item) => {
+                    const isCurrent =
+                      executionState.queue[executionState.currentIndex]?.id === item.id &&
+                      executionState.status === 'running';
+                    const isRetrying = retryingSingleId === item.id;
+
                     return (
                       <tr
                         key={item.id}
@@ -522,8 +656,14 @@ export function AutomationMonitorSection({
                             {item.recipientContact}
                           </span>
                           <span className="text-[10px] text-white/40 block max-w-[140px] truncate">
-                            {item.imageUrl ? '📷 ' : ''}{item.resolvedMessage}
+                            {item.imageUrl ? '📷 ' : ''}
+                            {item.resolvedMessage}
                           </span>
+                          {item.error && (
+                            <span className="text-[10px] text-rose-400 block max-w-[180px] truncate mt-0.5">
+                              ⚠️ {item.error}
+                            </span>
+                          )}
                         </td>
 
                         <td className="p-2.5">
@@ -533,19 +673,38 @@ export function AutomationMonitorSection({
                         </td>
 
                         <td className="p-2.5 text-right">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${
-                              item.status === 'sent'
-                                ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40'
-                                : item.status === 'sending'
-                                ? 'bg-[#f05a28]/20 text-[#ff8c5a] border-[#f05a28]/40 animate-pulse'
-                                : item.status === 'failed'
-                                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                                : 'bg-[#0d2530] text-white/50 border-white/10'
-                            }`}
-                          >
-                            {item.status}
-                          </span>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${
+                                item.status === 'sent'
+                                  ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40'
+                                  : item.status === 'sending'
+                                  ? 'bg-[#f05a28]/20 text-[#ff8c5a] border-[#f05a28]/40 animate-pulse'
+                                  : item.status === 'failed'
+                                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                                  : 'bg-[#0d2530] text-white/50 border-white/10'
+                              }`}
+                            >
+                              {item.status}
+                            </span>
+
+                            {/* Individual Retry button on failed rows */}
+                            {item.status === 'failed' && executionState.status !== 'running' && (
+                              <button
+                                onClick={() => handleRetrySingle(item.id)}
+                                disabled={isRetrying}
+                                className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 text-[10px] transition-all cursor-pointer flex items-center gap-0.5"
+                                title="Resend message to this number now"
+                              >
+                                {isRetrying ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="w-3 h-3" />
+                                )}
+                                <span>Retry</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -556,19 +715,22 @@ export function AutomationMonitorSection({
           </div>
         </div>
 
-        {/* Real-time Execution Terminal Logs */}
+        {/* Real-time Execution Terminal Logs Column */}
         <div className="space-y-3 bg-[#081419] p-4 rounded-xl border border-white/10 font-mono flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
             <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
               <Terminal className="w-4 h-4 text-[#06b6d4]" />
-              <span>Deterministic Execution Log Terminal</span>
+              <span>Server-Side Execution Log Terminal</span>
             </span>
             <span className="text-[10px] text-white/40">
               {executionState.logs.length} Event(s) Recorded
             </span>
           </div>
 
-          <div ref={terminalContainerRef} className="bg-[#060f13] p-3 rounded-lg border border-white/5 h-[300px] overflow-y-auto space-y-1.5 text-[11px] leading-relaxed scrollbar-thin">
+          <div
+            ref={terminalContainerRef}
+            className="bg-[#060f13] p-3 rounded-lg border border-white/5 h-[300px] overflow-y-auto space-y-1.5 text-[11px] leading-relaxed scrollbar-thin"
+          >
             {executionState.logs.length === 0 ? (
               <div className="text-white/40 italic">Waiting for automation execution events...</div>
             ) : (
